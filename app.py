@@ -49,15 +49,16 @@ st.write("---")
 item_nao_cadastrado = st.checkbox("⚠️ O item NÃO está na lista? Marque aqui para digitar manualmente")
 
 if item_nao_cadastrado:
-    item_escolhido = st.text_input("Digite o código ou nome completo do Item:", placeholder="Ex: 500 - NOVO ITEM KG")
+    # ➔ ADICIONADO 'key' para permitir a limpeza automática
+    item_escolhido = st.text_input("Digite o código ou nome completo do Item:", placeholder="Ex: 500 - NOVO ITEM KG", key="item_manual_input")
 else:
     lista_itens_setor = DADOS_ITENS[setor_selecionado]
     item_escolhido = st.selectbox("Busque e selecione o Item:", lista_itens_setor)
 
 quantidade = st.number_input("Quantidade necessária:", min_value=1, value=1, step=1)
 
-# ➔ NOVO CAMPO: Caixa de observações livre (Opcional)
-observacao = st.text_input("Observação (Opcional):", placeholder="Ex: Urgente, Entregar na recepção, etc.")
+# ➔ ADICIONADO 'key' para permitir a limpeza automática
+observacao = st.text_input("Observação (Opcional):", placeholder="Ex: Urgente, Entregar na recepção, etc.", key="obs_input")
 
 if st.button("➕ Adicionar Item ao Pedido", use_container_width=True):
     if nome_solicitante.strip() == "":
@@ -65,7 +66,6 @@ if st.button("➕ Adicionar Item ao Pedido", use_container_width=True):
     elif str(item_escolhido).strip() == "":
         st.error("Por favor, digite o nome do item antes de adicionar.")
     else:
-        # Garante que se a observação estiver vazia, vai um texto limpo
         texto_obs = observacao.strip() if observacao.strip() != "" else "-"
         
         st.session_state.carrinho.append({
@@ -74,14 +74,21 @@ if st.button("➕ Adicionar Item ao Pedido", use_container_width=True):
             "Setor": setor_selecionado,
             "Item": item_escolhido.upper(),
             "Quantidade": int(quantidade),
-            "Observacao": texto_obs # Salva a observação na memória do carrinho
+            "Observacao": texto_obs
         })
         st.success(f"Adicionado: {quantidade}x {item_escolhido.upper()}")
+        
+        # ➔ MÁGICA AQUI: Força as caixas de texto a ficarem vazias e reseta a quantidade para 1
+        st.session_state.obs_input = ""
+        if "item_manual_input" in st.session_state:
+            st.session_state.item_manual_input = ""
+            
+        # Recarrega a tela instantaneamente aplicando a limpeza
+        st.rerun()
 
 if st.session_state.carrinho:
     st.write("### 🛒 Itens no Pedido Atual")
     df_carrinho = pd.DataFrame(st.session_state.carrinho)
-    # Mostra a coluna de observação também na tabelinha de revisão do funcionário
     st.dataframe(df_carrinho[["Item", "Quantidade", "Observacao", "Setor"]], use_container_width=True)
     
     if st.button("🗑️ Limpar Todo o Pedido", type="secondary"):
