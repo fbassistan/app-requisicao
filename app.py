@@ -8,7 +8,7 @@ import time
 # Configuração da página
 st.set_page_config(page_title="Requisição Diária", page_icon="📝", layout="centered")
 
-# ➔ COLOQUE AQUI A SUA URL DO APP DA WEB DO GOOGLE SCRIPTS
+# ➔ SUA URL DO APP DA WEB DO GOOGLE SCRIPTS
 URL_WEB_APP = "https://script.google.com/macros/s/AKfycbzcNped3ftP-9FkLcWC-u65kl0RlX-rW2Z_8AHLGKgrw2ETjkoKJI2CHqisiSQnoUUb/exec"
 
 # Dicionário com os itens organizados por setor
@@ -46,18 +46,18 @@ setor_selecionado = st.selectbox("Selecione o seu Setor:", list(DADOS_ITENS.keys
 
 st.write("---")
 
-# ➔ NOVA OPÇÃO: Checkbox para ativar digitação manual
 item_nao_cadastrado = st.checkbox("⚠️ O item NÃO está na lista? Marque aqui para digitar manualmente")
 
 if item_nao_cadastrado:
-    # Se marcar o checkbox, exibe uma caixa de texto livre
     item_escolhido = st.text_input("Digite o código ou nome completo do Item:", placeholder="Ex: 500 - NOVO ITEM KG")
 else:
-    # Se não marcar, continua usando a busca inteligente por selectbox
     lista_itens_setor = DADOS_ITENS[setor_selecionado]
     item_escolhido = st.selectbox("Busque e selecione o Item:", lista_itens_setor)
 
 quantidade = st.number_input("Quantidade necessária:", min_value=1, value=1, step=1)
+
+# ➔ NOVO CAMPO: Caixa de observações livre (Opcional)
+observacao = st.text_input("Observação (Opcional):", placeholder="Ex: Urgente, Entregar na recepção, etc.")
 
 if st.button("➕ Adicionar Item ao Pedido", use_container_width=True):
     if nome_solicitante.strip() == "":
@@ -65,19 +65,24 @@ if st.button("➕ Adicionar Item ao Pedido", use_container_width=True):
     elif str(item_escolhido).strip() == "":
         st.error("Por favor, digite o nome do item antes de adicionar.")
     else:
+        # Garante que se a observação estiver vazia, vai um texto limpo
+        texto_obs = observacao.strip() if observacao.strip() != "" else "-"
+        
         st.session_state.carrinho.append({
             "Data_Hora": datetime.now().strftime("%d/%m/%Y %H:%M"),
             "Solicitante": nome_solicitante,
             "Setor": setor_selecionado,
-            "Item": item_escolhido.upper(), # Salva sempre em MAIÚSCULO para manter o padrão
-            "Quantidade": int(quantidade)
+            "Item": item_escolhido.upper(),
+            "Quantidade": int(quantidade),
+            "Observacao": texto_obs # Salva a observação na memória do carrinho
         })
         st.success(f"Adicionado: {quantidade}x {item_escolhido.upper()}")
 
 if st.session_state.carrinho:
     st.write("### 🛒 Itens no Pedido Atual")
     df_carrinho = pd.DataFrame(st.session_state.carrinho)
-    st.dataframe(df_carrinho[["Item", "Quantidade", "Setor"]], use_container_width=True)
+    # Mostra a coluna de observação também na tabelinha de revisão do funcionário
+    st.dataframe(df_carrinho[["Item", "Quantidade", "Observacao", "Setor"]], use_container_width=True)
     
     if st.button("🗑️ Limpar Todo o Pedido", type="secondary"):
         st.session_state.carrinho = []
