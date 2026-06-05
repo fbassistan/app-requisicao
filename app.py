@@ -9,7 +9,7 @@ import time
 st.set_page_config(page_title="Requisição Diária", page_icon="📝", layout="centered")
 
 # ➔ COLE AQUI A URL DO SEU APP DA WEB QUE VOCÊ COPIOU NO PASSO 1
-URL_WEB_APP = "COLE_AQUI_A_URL_GERADA_PELO_GOOGLE_SCRIPT"
+URL_WEB_APP = "https://script.google.com/macros/s/AKfycbzcNped3ftP-9FkLcWC-u65kl0RlX-rW2Z_8AHLGKgrw2ETjkoKJI2CHqisiSQnoUUb/exec"
 
 # Dicionário com os itens organizados por setor
 DADOS_ITENS = {
