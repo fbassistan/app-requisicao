@@ -1,3 +1,2 @@
 pandas
 openpyxl
-streamlit-google-sheets-connection
