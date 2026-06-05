@@ -8,7 +8,7 @@ import time  # Adicionado para evitar o erro de NameError
 st.set_page_config(page_title="Requisição Diária", page_icon="📝", layout="centered")
 
 # Link da sua planilha do Google Sheets
-URL_DA_PLANILHA = "COLE_AQUI_O_LINK_DA_SUA_PLANILHA_GOOGLE"
+URL_DA_PLANILHA = "https://docs.google.com/spreadsheets/d/1BvEklBa3wWgqYHb1TVbEeLSuoAP37bVx4VBHP8uQjT0/edit?usp=sharing"
 
 # Conexão com o Google Sheets
 try:
