@@ -1,20 +1,10 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from streamlit_gsheets import GSheetsConnection
-import time  # Adicionado para evitar o erro de NameError
+import time
 
 # Configuração da página
 st.set_page_config(page_title="Requisição Diária", page_icon="📝", layout="centered")
-
-# Link da sua planilha do Google Sheets
-URL_DA_PLANILHA = "https://docs.google.com/spreadsheets/d/1BvEklBa3wWgqYHb1TVbEeLSuoAP37bVx4VBHP8uQjT0/edit?gid=0#gid=0"
-
-# Conexão com o Google Sheets
-try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-except Exception:
-    st.error("Erro ao conectar com o banco de dados.")
 
 # Dicionário com os itens organizados por setor
 DADOS_ITENS = {
@@ -82,16 +72,19 @@ if st.session_state.carrinho:
     if st.button("🚀 ENVIAR REQUISIÇÃO PARA A CENTRAL", type="primary", use_container_width=True):
         with st.spinner("Enviando dados para a nuvem..."):
             try:
+                from streamlit_gsheets import GSheetsConnection
+                conn = st.connection("gsheets", type=GSheetsConnection)
+                
                 # Tenta ler da 'Página1' (padrão PT-BR) ou 'Sheet1' (padrão EN)
                 try:
-                    dados_existentes = conn.read(spreadsheet=URL_DA_PLANILHA, worksheet="Página1")
+                    dados_existentes = conn.read(worksheet="Página1")
                     aba_alvo = "Página1"
                 except Exception:
-                    dados_existentes = conn.read(spreadsheet=URL_DA_PLANILHA, worksheet="Sheet1")
+                    dados_existentes = conn.read(worksheet="Sheet1")
                     aba_alvo = "Sheet1"
                 
                 dados_atualizados = pd.concat([dados_existentes, df_carrinho], ignore_index=True)
-                conn.update(spreadsheet=URL_DA_PLANILHA, worksheet=aba_alvo, data=dados_atualizados)
+                conn.update(worksheet=aba_alvo, data=dados_atualizados)
                 
                 st.balloons()
                 st.success(f"🎉 Pedido enviado com sucesso!")
@@ -99,4 +92,4 @@ if st.session_state.carrinho:
                 time.sleep(2)
                 st.rerun()
             except Exception as e:
-                st.error(f"Erro ao salvar na nuvem: {e}. Garanta que as permissões da planilha estão como 'Qualquer pessoa com o link pode editar'.")
+                st.error(f"Erro ao salvar na nuvem: {e}. Certifique-se de que configurou a aba Secrets com o link correto da planilha.")
