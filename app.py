@@ -8,7 +8,7 @@ import time
 # Configuração da página
 st.set_page_config(page_title="Requisição Diária", page_icon="📝", layout="centered")
 
-# ➔ SUA URL DO APP DA WEB DO GOOGLE SCRIPTS
+# ➔ COLOQUE AQUI A SUA URL DO APP DA WEB DO GOOGLE SCRIPTS
 URL_WEB_APP = "https://script.google.com/macros/s/AKfycbzcNped3ftP-9FkLcWC-u65kl0RlX-rW2Z_8AHLGKgrw2ETjkoKJI2CHqisiSQnoUUb/exec"
 
 # Dicionário com os itens organizados por setor
@@ -39,6 +39,10 @@ DADOS_ITENS = {
 if 'carrinho' not in st.session_state:
     st.session_state.carrinho = []
 
+# Inicializa o número secreto do reset se ele não existir
+if 'reset_counter' not in st.session_state:
+    st.session_state.reset_counter = 0
+
 st.title("📝 Sistema de Requisição Diária")
 
 nome_solicitante = st.text_input("Nome do Solicitante:", placeholder="Ex: João Silva")
@@ -46,19 +50,18 @@ setor_selecionado = st.selectbox("Selecione o seu Setor:", list(DADOS_ITENS.keys
 
 st.write("---")
 
-item_nao_cadastrado = st.checkbox("⚠️ O item NÃO está na lista? Marque aqui para digitar manualmente")
+# ➔ Amarramos o reset_counter nas chaves (keys) de todos os campos que devem ser limpos
+item_nao_cadastrado = st.checkbox("⚠️ O item NÃO está na lista? Marque aqui para digitar manualmente", key=f"manual_{st.session_state.reset_counter}")
 
 if item_nao_cadastrado:
-    # ➔ ADICIONADO 'key' para permitir a limpeza automática
-    item_escolhido = st.text_input("Digite o código ou nome completo do Item:", placeholder="Ex: 500 - NOVO ITEM KG", key="item_manual_input")
+    item_escolhido = st.text_input("Digite o código ou nome completo do Item:", placeholder="Ex: 500 - NOVO ITEM KG", key=f"item_manual_{st.session_state.reset_counter}")
 else:
     lista_itens_setor = DADOS_ITENS[setor_selecionado]
-    item_escolhido = st.selectbox("Busque e selecione o Item:", lista_itens_setor)
+    item_escolhido = st.selectbox("Busque e selecione o Item:", lista_itens_setor, key=f"item_select_{st.session_state.reset_counter}")
 
-quantidade = st.number_input("Quantidade necessária:", min_value=1, value=1, step=1)
+quantidade = st.number_input("Quantidade necessária:", min_value=1, value=1, step=1, key=f"qtd_{st.session_state.reset_counter}")
 
-# ➔ ADICIONADO 'key' para permitir a limpeza automática
-observacao = st.text_input("Observação (Opcional):", placeholder="Ex: Urgente, Entregar na recepção, etc.", key="obs_input")
+observacao = st.text_input("Observação (Opcional):", placeholder="Ex: Urgente, Entregar na recepção, etc.", key=f"obs_{st.session_state.reset_counter}")
 
 if st.button("➕ Adicionar Item ao Pedido", use_container_width=True):
     if nome_solicitante.strip() == "":
@@ -78,12 +81,9 @@ if st.button("➕ Adicionar Item ao Pedido", use_container_width=True):
         })
         st.success(f"Adicionado: {quantidade}x {item_escolhido.upper()}")
         
-        # ➔ MÁGICA AQUI: Força as caixas de texto a ficarem vazias e reseta a quantidade para 1
-        st.session_state.obs_input = ""
-        if "item_manual_input" in st.session_state:
-            st.session_state.item_manual_input = ""
-            
-        # Recarrega a tela instantaneamente aplicando a limpeza
+        # ➔ A MÁGICA AQUI: Aumentamos o número secreto. No próximo loop, os campos nascem zerados!
+        st.session_state.reset_counter += 1
+        time.sleep(1) # Dá 1 segundo para o usuário ver a barra verde de sucesso antes de limpar
         st.rerun()
 
 if st.session_state.carrinho:
@@ -99,7 +99,7 @@ if st.session_state.carrinho:
     
     if st.button("🚀 ENVIAR REQUISIÇÃO PARA A CENTRAL", type="primary", use_container_width=True):
         if "COLE_AQUI" in URL_WEB_APP:
-            st.error("Erro: Você esqueceu de colocar a sua URL do Google Script na linha 12 do código!")
+            st.error("Erro: Você esqueceu de colocar a sua URL do Google Script na linha 13 do código!")
         else:
             with st.spinner("Enviando dados diretamente para o Google Sheets..."):
                 try:
