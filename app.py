@@ -8,7 +8,7 @@ import time
 # Configuração da página
 st.set_page_config(page_title="Requisição Diária", page_icon="📝", layout="centered")
 
-# ➔ COLE AQUI A URL DO SEU APP DA WEB QUE VOCÊ COPIOU NO PASSO 1
+# ➔ COLE AQUI A URL DO SEU APP DA WEB DO GOOGLE SCRIPTS
 URL_WEB_APP = "https://script.google.com/macros/s/AKfycbzcNped3ftP-9FkLcWC-u65kl0RlX-rW2Z_8AHLGKgrw2ETjkoKJI2CHqisiSQnoUUb/exec"
 
 # Dicionário com os itens organizados por setor
@@ -80,7 +80,6 @@ if st.session_state.carrinho:
         else:
             with st.spinner("Enviando dados diretamente para o Google Sheets..."):
                 try:
-                    # Envio nativo em JSON - 100% à prova de falhas de biblioteca
                     req = urllib.request.Request(URL_WEB_APP, method="POST")
                     req.add_header('Content-Type', 'application/json')
                     payload = json.dumps(st.session_state.carrinho).encode('utf-8')
