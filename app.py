@@ -8,7 +8,7 @@ import time
 # Configuração da página
 st.set_page_config(page_title="Requisição Diária", page_icon="📝", layout="centered")
 
-# ➔ COLE AQUI A URL DO SEU APP DA WEB DO GOOGLE SCRIPTS
+# ➔ COLOQUE AQUI A SUA URL DO APP DA WEB DO GOOGLE SCRIPTS
 URL_WEB_APP = "https://script.google.com/macros/s/AKfycbzcNped3ftP-9FkLcWC-u65kl0RlX-rW2Z_8AHLGKgrw2ETjkoKJI2CHqisiSQnoUUb/exec"
 
 # Dicionário com os itens organizados por setor
@@ -46,22 +46,33 @@ setor_selecionado = st.selectbox("Selecione o seu Setor:", list(DADOS_ITENS.keys
 
 st.write("---")
 
-lista_itens_setor = DADOS_ITENS[setor_selecionado]
-item_escolhido = st.selectbox("Busque e selecione o Item:", lista_itens_setor)
+# ➔ NOVA OPÇÃO: Checkbox para ativar digitação manual
+item_nao_cadastrado = st.checkbox("⚠️ O item NÃO está na lista? Marque aqui para digitar manualmente")
+
+if item_nao_cadastrado:
+    # Se marcar o checkbox, exibe uma caixa de texto livre
+    item_escolhido = st.text_input("Digite o código ou nome completo do Item:", placeholder="Ex: 500 - NOVO ITEM KG")
+else:
+    # Se não marcar, continua usando a busca inteligente por selectbox
+    lista_itens_setor = DADOS_ITENS[setor_selecionado]
+    item_escolhido = st.selectbox("Busque e selecione o Item:", lista_itens_setor)
+
 quantidade = st.number_input("Quantidade necessária:", min_value=1, value=1, step=1)
 
 if st.button("➕ Adicionar Item ao Pedido", use_container_width=True):
     if nome_solicitante.strip() == "":
         st.error("Por favor, preencha o seu nome antes de adicionar itens.")
+    elif str(item_escolhido).strip() == "":
+        st.error("Por favor, digite o nome do item antes de adicionar.")
     else:
         st.session_state.carrinho.append({
             "Data_Hora": datetime.now().strftime("%d/%m/%Y %H:%M"),
             "Solicitante": nome_solicitante,
             "Setor": setor_selecionado,
-            "Item": item_escolhido,
+            "Item": item_escolhido.upper(), # Salva sempre em MAIÚSCULO para manter o padrão
             "Quantidade": int(quantidade)
         })
-        st.success(f"Adicionado: {quantidade}x {item_escolhido}")
+        st.success(f"Adicionado: {quantidade}x {item_escolhido.upper()}")
 
 if st.session_state.carrinho:
     st.write("### 🛒 Itens no Pedido Atual")
@@ -76,7 +87,7 @@ if st.session_state.carrinho:
     
     if st.button("🚀 ENVIAR REQUISIÇÃO PARA A CENTRAL", type="primary", use_container_width=True):
         if "COLE_AQUI" in URL_WEB_APP:
-            st.error("Erro: Você esqueceu de colocar a sua URL do Google Script na linha 11 do código!")
+            st.error("Erro: Você esqueceu de colocar a sua URL do Google Script na linha 12 do código!")
         else:
             with st.spinner("Enviando dados diretamente para o Google Sheets..."):
                 try:
