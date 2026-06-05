@@ -1,10 +1,15 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import urllib.request
+import json
 import time
 
 # Configuração da página
 st.set_page_config(page_title="Requisição Diária", page_icon="📝", layout="centered")
+
+# ➔ COLE AQUI A URL DO SEU APP DA WEB QUE VOCÊ COPIOU NO PASSO 1
+URL_WEB_APP = "COLE_AQUI_A_URL_GERADA_PELO_GOOGLE_SCRIPT"
 
 # Dicionário com os itens organizados por setor
 DADOS_ITENS = {
@@ -70,26 +75,26 @@ if st.session_state.carrinho:
     st.write("---")
     
     if st.button("🚀 ENVIAR REQUISIÇÃO PARA A CENTRAL", type="primary", use_container_width=True):
-        with st.spinner("Enviando dados para a nuvem..."):
-            try:
-                from streamlit_gsheets import GSheetsConnection
-                conn = st.connection("gsheets", type=GSheetsConnection)
-                
-                # Tenta ler da 'Página1' (padrão PT-BR) ou 'Sheet1' (padrão EN)
+        if "COLE_AQUI" in URL_WEB_APP:
+            st.error("Erro: Você esqueceu de colocar a sua URL do Google Script na linha 11 do código!")
+        else:
+            with st.spinner("Enviando dados diretamente para o Google Sheets..."):
                 try:
-                    dados_existentes = conn.read(worksheet="Página1")
-                    aba_alvo = "Página1"
-                except Exception:
-                    dados_existentes = conn.read(worksheet="Sheet1")
-                    aba_alvo = "Sheet1"
-                
-                dados_atualizados = pd.concat([dados_existentes, df_carrinho], ignore_index=True)
-                conn.update(worksheet=aba_alvo, data=dados_atualizados)
-                
-                st.balloons()
-                st.success(f"🎉 Pedido enviado com sucesso!")
-                st.session_state.carrinho = []
-                time.sleep(2)
-                st.rerun()
-            except Exception as e:
-                st.error(f"Erro ao salvar na nuvem: {e}. Certifique-se de que configurou a aba Secrets com o link correto da planilha.")
+                    # Envio nativo em JSON - 100% à prova de falhas de biblioteca
+                    req = urllib.request.Request(URL_WEB_APP, method="POST")
+                    req.add_header('Content-Type', 'application/json')
+                    payload = json.dumps(st.session_state.carrinho).encode('utf-8')
+                    
+                    with urllib.request.urlopen(req, data=payload) as response:
+                        resultado = response.read().decode('utf-8')
+                    
+                    if "Error" in resultado:
+                        st.error(f"Erro no Google Sheets: {resultado}")
+                    else:
+                        st.balloons()
+                        st.success(f"🎉 Pedido enviado com sucesso para a central!")
+                        st.session_state.carrinho = []
+                        time.sleep(2)
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Erro na transmissão: {e}. Verifique se copiou a URL do Apps Script corretamente.")
