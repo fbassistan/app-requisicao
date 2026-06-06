@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="Requisição Diária", page_icon="📝", layout="centered")
 
 # ➔ SUA URL DO APP DA WEB DO GOOGLE SCRIPTS
-URL_WEB_APP = "COLE_AQUI_A_URL_GERADA_PELO_GOOGLE_SCRIPT"
+URL_WEB_APP = "https://docs.google.com/spreadsheets/d/1BvEklBa3wWgqYHb1TVbEeLSuoAP37bVx4VBHP8uQjT0/edit?gid=0#gid=0"
 
 # Dicionário mestre com os itens limpos e organizados por Setor e Subcategoria
 DADOS_SISTEMA = {
