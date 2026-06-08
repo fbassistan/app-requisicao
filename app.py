@@ -5,7 +5,7 @@ import urllib.request
 import json
 import time
 import re
-import unicodedata # ➔ Biblioteca mágica para remover acentos
+import unicodedata
 
 st.set_page_config(page_title="Requisição Diária", page_icon="📝", layout="centered")
 
@@ -31,12 +31,11 @@ DADOS_SISTEMA = {
         "HORTIFRUTI": ["ABACAXI", "AZEITONA", "CAPIM SANTO", "CUMARÚ", "COCO VERDE", "PIMENTA DEDO DE MOÇA", "BANANA DA TERRA", "BETERRABA", "GRAO DE BICO", "MANJERICÃO", "GENGIBRE", "HIBISCO", "HORTELÃ", "LARANJA PERA", "LARANJA BAHIA", "LIMÃO SICILIANO", "LIMÃO ROSA", "LIMÃO TAITI", "MARACUJÁ", "MEL", "NIBS DE CACAU", "PEPINO", "PIMENTA ROSA", "FRUTAS DA ÉPOCA (SERIGUELA)", "TOMILHO", "ZIMBRO", "CRAVO DA ÍNDIA", "CAJU", "CACAU", "TANGERINA", "PITANGA", "CARDAMOMO", "MAÇÃ VERMELHA", "LOURO", "LEITE", "LEITE VEGETAL", "MANGA", "MAMÃO", "MELÃO", "BANANA PRATA", "FLORES COMESTIVEIS"]
     },
     "SALÃO": {
-        "VINHOS / ADEGA": ["DOMAINE DE LA SOLITUDE CHATEAUNEUF DU PAPE 2021", "DOMAINE SÉGUINOT-BORDET CHABLIS 2022", "ALMAVIVA 2020", "BAROLO GIANNI GAGLIARDO DOCG 2019", "BRUNELLO DI MONTALCINO PODERE BRIZIO 2013", "PORTAL DA CALÇADA LOUREIRA", "MONTE DA PECEGUINA", "CALABUIG TEMPRANILLO", "BARONE PAULINE SAUTERNES", "SACRAMENTO DOLCE FAR NIENTE NATURE CHENIN BLANC", "THERA AUGURI EXTRA BRUT", "VIVENTE PÉT-NAT MEL DE CACAU & PINOT NOIR", "UVVA EXTRA BRUT", "PROSECCO BERNARDI BRUT PRA SEI SALT DOCG", "DRAPPIER MILLÉSIME EXCEPTION EXTRA BRUT", "MÖET & CHANDON BRUT IMPERIAL", "MÖET & CHANDON ROSÉ IMPERIAL", "VEUVE CLIQUOT BRUT YELLOW LABEL", "ERA DOS VENTOS PEVERELLA", "THERA SAUVIGNON BLANC", "UVVA CHARDONNAY", "UVVA SAUVIGNON BLANC", "OTRONIA 45 RUGIENTES CORTES BLANCAS", "RUTINI CHARDONNAY", "VALLISTO TORRONTÉS", "BAETTIG LOS PARIENTES CHARDONNAY ORGÂNICO", "DOMAINE CHAUVEAU COTEAUX DI GIENNOIS CALCAIRE", "FAMILLE BOUGRIER CONFIDENCES VOUVRAY", "FAMILLE HIGEL CLASSIC GEWÜRZTRAMINER", "DONNAFUGATA ANTÍLIA DOC", "POGGIOTONDO VERMENTINO IGT", "FANTINI PINOT GRIGIO IGP", "MORGADIO DA TORRE ALVARINHO", "PORTAL DA CALÇADA LOUREIRA", "THERA ROSÉ", "VIVENTE ROSÉ TRANQUILO", "ABBOTS & DELAUNAY GRENACHE ROSÉ", "CHATEAU LAFOUX", "DAI TERRA ROSSA A.MARE ROSATO PUGLIA IGP", "MONTE DA PECEGUINA", "GUASPARI VISTA DA MATA CABERNET FRANC", "MANUS CLÁSSICO NEBBIOLO", "SACRAMENTO SABINA SYRAH", "UVVA CORDEL", "UVVA DIAMÃ", "RUTINI MALBEC", "SOPHENIA ESTATE WINE CABERNET SAUVIGNON", "ODJFELL CAPÍTULO BLEND ORGÂNICO", "DOMAINE DE ROCHEBIN PINOT NOIR DE BOURGOGNE", "CALABUIG TEMPRANILLO", "FANTINI MONTEPULCIANO D'ABRUZZO COLLINE TERAMANE DOCG", "GARZON SINGLE VINEYARD TANNAT"],
+        "VINHOS / ADEGA": ["DOMAINE DE LA SOLITUDE CHATEAUNEUF DU PAPE 2021", "DOMAINE SÉGUINOT-BORDET CHABLIS 2022", "ALMAVIVA 2020", "BAROLO GIANNI GAGLIARDO DOCG 2019", "BRUNELLO DI MONTALCINO PODERE BRIZIO 2013", "PORTAL DA CALÇADA LOUREIRA", "MONTE DA PECEGUINA", "CALABUIG TEMPRANILLO", "BARONE PAULINE SAUTERNES", "SACRAMENTO DOLCE FAR NIENTE NATURE CHENIN BLANC", "THERA AUGURI EXTRA BRUT", "VIVENTE PÉT-NAT MEL DE CACAU & PINOT NOIR", "UVVA EXTRA BRUT", "PROSECCO BERNARDI BRUT PRA SEI SALT DOCG", "DRAPPIER MILLÉSIME EXCEPTION EXTRA BRUT", "MÖET & CHANDON BRUT IMPERIAL", "MÖET & CHANDON ROSÉ IMPERIAL", "VEUVE CLIQUOT BRUT YELLOW LABEL", "ERA DOS VENTOS PEVERELLA", "THERA SAUVIGNON BLANC", "UVVA CHARDONNAY", "UVVA SAUVIGNON BLANC", "OTRONIA 45 RUGIENTES CORTES BLANCAS", "RUTINI CHARDONNAY", "VALLISTO TORRONTÉS", "BAETTIG LOS PARIENTES CHARDONNAY ORGÂNICO", "DOMAINE CHAUVEAU COTEAUX DI GIENNOIS CALCAIRE", "FAMILLE BOUGRIER CONFIDENCES VOUVRAY", "FAMILLE HIGEL CLASSIC GEWÜRZTRAMINER", "DONNAFUGATA ANTÍLIA DOC", "POGGIOTONDO VERMENTINO IGT", "FANTINI PINOT GRIGIO IGP", "MORGADIO DA TORRE ALVARINHO", "PORTAL DA CALÇADA LOUREIRA", "THERA ROSÉ", "VIVENTE ROSÉ TRANQUILO", "ABBOTS & DELAUNAY GRENACHE ROSÉ", "CHATEAU LAFOUX", "DAI TERRA ROSSA A.MARE ROSATO PUGLIA IGP", "MONTE DA PECEGUINA", "GUASPARI VISTA DA MATA CABERNET Franc", "MANUS CLÁSSICO NEBBIOLO", "SACRAMENTO SABINA SYRAH", "UVVA CORDEL", "UVVA DIAMÃ", "RUTINI MALBEC", "SOPHENIA ESTATE WINE CABERNET SAUVIGNON", "ODJFELL CAPÍTULO BLEND ORGÂNICO", "DOMAINE DE ROCHEBIN PINOT NOIR DE BOURGOGNE", "CALABUIG TEMPRANILLO", "FANTINI MONTEPULCIANO D'ABRUZZO COLLINE TERAMANE DOCG", "GARZON SINGLE VINEYARD TANNAT"],
         "CONSUMÍVEIS / DIVERSOS": ["SORO FISIOLOGICO", "ALGODÃO", "BAND-AID", "CANETA ESFEROGRÁFICA", "CANETA PILOTO AZUL", "CANETA PILOTO PRETA", "CANELA PILOTO VERMELHO", "ESPARADRAPO", "GASE", "GUARDANAPO 40 X 40", "PAPEL RECICLADO TAMANHO A4", "PILHA AA", "PILHA AAA", "PISTOLA DE ISQUEIRO", "REPELENTE LOÇÃO", "REPELENTE OFF SPRAY", "VELAS DE ANIVERSÁRIO", "VELAS GRANDES 10X15", "VELAS MÉDIAS 5,5X15", "VELAS PEQUENAS 3X6", "ABACAXI VERDE", "AMENDOIM 500G", "AZEITE EXTRA VIRGEM EA 500ML", "AZEITONAS PRETAS", "CACHO DE BANANA VERDE", "CASTANHA DE CAJÚ", "COCO SECO", "COCO VERDE", "FLOR DE SAL", "GRAVIOLA (ESCREVER A FRUTA)", "SAL GROSSO", "SAL REFINADO"]
     }
 }
 
-# ➔ FUNÇÃO DE LIMPEZA DE ACENTOS: transforma "ÁGUA" em "AGUA" apenas para comparação
 def remover_acentos(texto):
     return "".join(c for c in unicodedata.normalize('NFD', str(texto)) if unicodedata.category(c) != 'Mn').upper().strip()
 
@@ -70,6 +69,19 @@ for subcat, itens in DADOS_SISTEMA[setor_selecionado].items():
     lista_itens_plana.extend(itens)
 lista_itens_plana = sorted(list(set(lista_itens_plana)))
 
+# ➔ CRIAÇÃO DAS OPÇÕES COM HISTÓRICO DE BUSCA EMBUTIDO
+opcoes_selectbox = []
+mapeamento_reverso = {}
+
+for item in lista_itens_plana:
+    item_sem = remover_acentos(item)
+    if item_sem != item:
+        label = f"{item} ({item_sem})" # Ex: ÁGUA TÔNICA (AGUA TONICA)
+    else:
+        label = item
+    opcoes_selectbox.append(label)
+    mapeamento_reverso[label] = item
+
 st.write("---")
 
 item_nao_cadastrado = st.checkbox("⚠️ O item NÃO está na lista? Marque aqui para digitar manualmente", key=f"manual_{st.session_state.reset_counter}")
@@ -80,36 +92,20 @@ if item_nao_cadastrado:
     item_nome_limpo = item_bruto.upper().strip()
     subcategoria_detectada = "MANUAL / NOVO ITEM"
 else:
-    # ➔ NOVA BARRA DE BUSCA BLINDADA CONTRA ACENTOS:
-    texto_busca = st.text_input("🔍 Digite para buscar o item (pode escrever sem acentos):", placeholder="Ex: agua, file, maca, suco...", key=f"busca_{st.session_state.reset_counter}")
+    # ➔ APENAS UM CAMPO DE SELEÇÃO COMO VOCÊ PEDIU!
+    item_bruto = st.selectbox("Busque e selecione o Item:", opcoes_selectbox, key=f"item_select_{st.session_state.reset_counter}")
     
-    # Filtra a lista comparando os textos sem acentos de ambos os lados
-    termo_filtrado = remover_acentos(texto_busca)
-    if termo_filtrado:
-        lista_filtrada = [item for item in lista_itens_plana if termo_filtrado in remover_acentos(item)]
-    else:
-        lista_filtrada = lista_itens_plana
+    # Recupera o nome original blindado do banco (com acentos)
+    item_original = mapeamento_reverso[item_bruto]
+    item_nome_limpo, unidade_medida = separar_unidade(item_original)
+    
+    subcategoria_detectada = "OUTROS"
+    for subcat, itens in DADOS_SISTEMA[setor_selecionado].items():
+        if item_original in itens:
+            subcategoria_detectada = subcat
+            break
 
-    # Se a busca não encontrar nada, avisa o usuário de forma amigável
-    if not lista_filtrada:
-        st.warning("❌ Nenhum item encontrado com esse nome. Verifique a digitação ou marque a caixa acima para inserir manualmente.")
-        item_nome_limpo = ""
-        unidade_medida = "UND"
-        subcategoria_detectada = "OUTROS"
-    else:
-        item_bruto = st.selectbox("Selecione o Item na lista:", lista_filtrada, key=f"item_select_{st.session_state.reset_counter}")
-        item_nome_limpo, unidade_medida = separar_unidade(item_bruto)
-        
-        subcategoria_detectada = "OUTROS"
-        for subcat, itens in DADOS_SISTEMA[setor_selecionado].items():
-            if item_bruto in itens:
-                subcategoria_detectada = subcat
-                break
-
-if not item_nao_cadastrado and lista_filtrada:
-    st.info(f"⚖️ Unidade de medida detectada: **{unidade_medida}**")
-elif item_nao_cadastrado:
-    st.info(f"⚖️ Unidade de medida selecionada: **{unidade_medida}**")
+st.info(f"⚖️ Unidade de medida: **{unidade_medida}**")
 
 quantidade = st.number_input(f"Quantidade necessária:", min_value=1, value=1, step=1, key=f"qtd_{st.session_state.reset_counter}")
 observacao = st.text_input("Observação (Opcional):", placeholder="Ex: Urgente, Marca específica...", key=f"obs_{st.session_state.reset_counter}")
