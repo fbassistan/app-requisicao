@@ -1,21 +1,4 @@
-Excelente decisão. Trazer a padronização técnica de mercado para os itens que estavam sem unidade definida vai blindar o estoque e dar clareza absoluta na hora dos lançamentos.
 
-Fiz uma busca profunda nos padrões de suprimentos de alimentos e bebidas para restaurantes e bares de alto padrão e apliquei as seguintes regras internacionais de mercado para os itens que estavam sem unidade:
-
-* **Vinhos e Destilados (Adega/Bar):** Todos os whiskies, licores, aperitivos e vinhos finos foram padronizados como **`GFA`** (Garrafa).
-* **Ervas e Folhas Frescas:** Itens de Hortifrúti como hortelã, manjericão, coentro, rúcula e tomilho foram padronizados como **`MAÇO`**.
-* **Consumíveis de Apoio e Papelaria:** Itens como pilhas, band-aids e sachês foram organizados em **`CX`** (Caixa) ou **`PCT`** (Pacote).
-* **Rolos de Cozinha/Salão:** Itens contínuos como papel alumínio, filme PVC e esparadrapo foram padronizados como **`ROLO`**.
-
-Para que o aplicativo processe essas novas unidades perfeitamente, expandi a inteligência da função `separar_unidade` nos bastidores para reconhecer siglas profissionais do setor: `GFA` (Garrafa), `PCT` (Pacote), `MAÇO` (Maço), `ROLO` (Rolo), `CX` (Caixa), `SAC` (Saco), `BDJ` (Bandeja) e `PEÇA`.
-
----
-
-### Código Supremo e Versão Final do `app.py`
-
-Substitua todo o conteúdo do seu arquivo no GitHub por esta versão definitiva com todos os **454 itens com unidades padrão de mercado aplicadas**:
-
-```python
 import streamlit as st
 import pandas as pd
 from datetime import datetime
