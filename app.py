@@ -86,4 +86,101 @@ st.write("---")
 item_nao_cadastrado = st.checkbox("⚠️ O item NÃO está na lista? Marque aqui para digitar manualmente", key=f"manual_{st.session_state.reset_counter}")
 
 if item_nao_cadastrado:
-    item_bruto = st.text_input("Digite o nome completo do Item:", placeholder="
+    item_bruto = st.text_input("Digite o nome completo do Item:", placeholder="Ex: NOVO PRODUTO", key=f"item_manual_{st.session_state.reset_counter}")
+    unidade_medida = st.selectbox("Selecione a Unidade:", ["UND", "KG", "L", "LATA", "PORÇÃO", "G", "ML"], key=f"uni_manual_{st.session_state.reset_counter}")
+    item_nome_limpo = item_bruto.upper().strip()
+    subcategoria_detectada = "MANUAL / NOVO ITEM"
+else:
+    item_bruto = st.selectbox("Busque e selecione o Item:", opcoes_selectbox, key=f"item_select_{st.session_state.reset_counter}")
+    item_original = mapeamento_reverso[item_bruto]
+    item_nome_limpo, unidade_medida = separar_unidade(item_original)
+    
+    subcategoria_detectada = "OUTROS"
+    for subcat, itens in DADOS_SISTEMA[setor_selecionado].items():
+        if item_original in itens:
+            subcategoria_detectada = subcat
+            break
+
+st.info(f"⚖️ Unidade de medida: **{unidade_medida}**")
+
+quantidade = st.number_input(f"Quantidade necessária:", min_value=1, value=1, step=1, key=f"qtd_{st.session_state.reset_counter}")
+observacao = st.text_input("Observação (Opcional):", placeholder="Ex: Urgente, Marca específica...", key=f"obs_{st.session_state.reset_counter}")
+
+if st.button("➕ Adicionar Item ao Pedido", use_container_width=True):
+    if nome_solicitante.strip() == "":
+        st.error("Por favor, preencha o seu nome antes de adicionar itens.")
+    elif item_nome_limpo == "":
+        st.error("Por favor, selecione ou digite um item válido antes de adicionar.")
+    else:
+        texto_obs = observacao.strip() if observacao.strip() != "" else "-"
+        
+        novo_registro = pd.DataFrame([{
+            "Data_Hora": datetime.now().strftime("%d/%m/%Y %H:%M"),
+            "Solicitante": nome_solicitante,
+            "Setor": setor_selecionado,
+            "Categoria": subcategoria_detectada,
+            "Item": item_nome_limpo,
+            "Quantidade": int(quantidade),
+            "Unidade": unidade_medida,
+            "Observacao": texto_obs
+        }])
+        
+        st.session_state.carrinho_df = pd.concat([st.session_state.carrinho_df, novo_registro], ignore_index=True)
+        st.success(f"Adicionado: {quantidade} {unidade_medida} de {item_nome_limpo}")
+        
+        st.session_state.reset_counter += 1
+        time.sleep(0.5)
+        st.rerun()
+
+if not st.session_state.carrinho_df.empty:
+    st.write("### 🛒 Itens no Pedido Atual")
+    st.caption("💡 Dica: Dê dois cliques na **Quantidade** ou **Observação** para alterar. Selecione a linha e clique na lixeira no canto da tabela para remover.")
+    
+    # ➔ MÁGICA AQUI: Setor e Categoria foram alterados para "None", ocultando-os visualmente da tela do celular!
+    st.session_state.carrinho_df = st.data_editor(
+        st.session_state.carrinho_df,
+        column_config={
+            "Data_Hora": None,
+            "Solicitante": None,
+            "Setor": None,       # ➔ Ocultado visualmente do app, mas salvo na planilha!
+            "Categoria": None,   # ➔ Ocultado visualmente do app, mas salvo na planilha!
+            "Item": st.column_config.TextColumn("Item", disabled=True),
+            "Unidade": st.column_config.TextColumn("Unidade", disabled=True),
+            "Quantidade": st.column_config.NumberColumn("Quantidade", min_value=1, step=1, required=True),
+            "Observacao": st.column_config.TextColumn("Observação (Clique para editar)")
+        },
+        use_container_width=True,
+        num_rows="dynamic"
+    )
+    
+    if st.button("🗑️ Limpar Todo o Pedido", type="secondary"):
+        st.session_state.carrinho_df = pd.DataFrame(columns=["Data_Hora", "Solicitante", "Setor", "Categoria", "Item", "Quantidade", "Unidade", "Observacao"])
+        st.rerun()
+        
+    st.write("---")
+    
+    if st.button("🚀 ENVIAR REQUISIÇÃO PARA A CENTRAL", type="primary", use_container_width=True):
+        if "COLE_AQUI" in URL_WEB_APP:
+            st.error("Erro: Falta colocar a sua URL do Google Script na linha 13!")
+        else:
+            with st.spinner("Enviando dados diretamente para o Google Sheets..."):
+                try:
+                    lista_pedidos = st.session_state.carrinho_df.to_dict(orient='records')
+                    
+                    req = urllib.request.Request(URL_WEB_APP, method="POST")
+                    req.add_header('Content-Type', 'application/json')
+                    payload = json.dumps(lista_pedidos).encode('utf-8')
+                    
+                    with urllib.request.urlopen(req, data=payload) as response:
+                        resultado = response.read().decode('utf-8')
+                    
+                    if "Error" in resultado:
+                        st.error(f"Erro no Google Sheets: {resultado}")
+                    else:
+                        st.balloons()
+                        st.success(f"🎉 Pedido enviado com sucesso para a central!")
+                        st.session_state.carrinho_df = pd.DataFrame(columns=["Data_Hora", "Solicitante", "Setor", "Categoria", "Item", "Quantidade", "Unidade", "Observacao"])
+                        time.sleep(2)
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Erro na transmissão: {e}")
