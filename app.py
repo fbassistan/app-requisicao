@@ -6,6 +6,7 @@ import json
 import time
 import re
 import unicodedata
+import os # ➔ Nova biblioteca para gerenciar os arquivos de rascunho
 
 st.set_page_config(page_title="Requisição Diária", page_icon="📝", layout="centered")
 
@@ -36,6 +37,9 @@ DADOS_SISTEMA = {
     }
 }
 
+if 'usuario_anterior' not in st.session_state:
+    st.session_state.usuario_anterior = ""
+
 def remover_acentos(texto):
     return "".join(c for c in unicodedata.normalize('NFD', str(texto)) if unicodedata.category(c) != 'Mn').upper().strip()
 
@@ -64,6 +68,24 @@ st.title("📝 Sistema de Requisição Diária")
 nome_solicitante = st.text_input("Nome do Solicitante:", placeholder="Ex: João Silva")
 setor_selecionado = st.selectbox("Selecione o seu Setor:", list(DADOS_SISTEMA.keys()))
 
+# ➔ LOGICA DE CAPTURA DO RASCUNHO AUTOMÁTICO
+arquivo_rascunho = None
+if nome_solicitante.strip():
+    nome_slug = re.sub(r'[^a-zA-Z0-9]', '_', nome_solicitante.strip().lower())
+    arquivo_rascunho = f"rascunho_{nome_slug}.json"
+    
+    # Se o nome mudou, tenta carregar o arquivo salvo em disco
+    if st.session_state.usuario_anterior != nome_solicitante.strip():
+        if os.path.exists(arquivo_rascunho):
+            try:
+                with open(arquivo_rascunho, "r", encoding="utf-8") as f:
+                    dados_salvos = json.load(f)
+                st.session_state.carrinho_df = pd.DataFrame(dados_salvos)
+                st.toast(f"🔄 Rascunho de {nome_solicitante} recuperado com sucesso!", icon="💾")
+            except:
+                pass
+        st.session_state.usuario_anterior = nome_solicitante.strip()
+
 lista_itens_plana = []
 for subcat, itens in DADOS_SISTEMA[setor_selecionado].items():
     lista_itens_plana.extend(itens)
@@ -71,18 +93,13 @@ lista_itens_plana = sorted(list(set(lista_itens_plana)))
 
 opcoes_selectbox = []
 mapeamento_reverso = {}
-
 for item in lista_itens_plana:
     item_sem = remover_acentos(item)
-    if item_sem != item:
-        label = f"{item} ({item_sem})"
-    else:
-        label = item
+    label = f"{item} ({item_sem})" if item_sem != item else item
     opcoes_selectbox.append(label)
     mapeamento_reverso[label] = item
 
 st.write("---")
-
 item_nao_cadastrado = st.checkbox("⚠️ O item NÃO está na lista? Marque aqui para digitar manualmente", key=f"manual_{st.session_state.reset_counter}")
 
 if item_nao_cadastrado:
@@ -102,7 +119,6 @@ else:
             break
 
 st.info(f"⚖️ Unidade de medida: **{unidade_medida}**")
-
 quantidade = st.number_input(f"Quantidade necessária:", min_value=1, value=1, step=1, key=f"qtd_{st.session_state.reset_counter}")
 observacao = st.text_input("Observação (Opcional):", placeholder="Ex: Urgente, Marca específica...", key=f"obs_{st.session_state.reset_counter}")
 
@@ -136,37 +152,40 @@ if not st.session_state.carrinho_df.empty:
     st.write("### 🛒 Itens no Pedido Atual")
     st.caption("💡 Dica: Dê dois cliques na **Quantidade** ou **Observação** para alterar. Selecione a linha e clique na lixeira no canto da tabela para remover.")
     
-    # ➔ MÁGICA AQUI: Setor e Categoria foram alterados para "None", ocultando-os visualmente da tela do celular!
     st.session_state.carrinho_df = st.data_editor(
         st.session_state.carrinho_df,
         column_config={
-            "Data_Hora": None,
-            "Solicitante": None,
-            "Setor": None,       # ➔ Ocultado visualmente do app, mas salvo na planilha!
-            "Categoria": None,   # ➔ Ocultado visualmente do app, mas salvo na planilha!
+            "Data_Hora": None, "Solicitante": None, "Setor": None, "Categoria": None,
             "Item": st.column_config.TextColumn("Item", disabled=True),
             "Unidade": st.column_config.TextColumn("Unidade", disabled=True),
             "Quantidade": st.column_config.NumberColumn("Quantidade", min_value=1, step=1, required=True),
             "Observacao": st.column_config.TextColumn("Observação (Clique para editar)")
         },
-        use_container_width=True,
-        num_rows="dynamic"
+        use_container_width=True, num_rows="dynamic"
     )
     
+    # ➔ ATUALIZAÇÃO DO ARQUIVO DE RASCUNHO EM DISCO (Salva edições e remoções na hora!)
+    if arquivo_rascunho:
+        if not st.session_state.carrinho_df.empty:
+            with open(arquivo_rascunho, "w", encoding="utf-8") as f:
+                json.dump(st.session_state.carrinho_df.to_dict(orient='records'), f, ensure_ascii=False, indent=2)
+        else:
+            if os.path.exists(arquivo_rascunho): os.remove(arquivo_rascunho)
+
     if st.button("🗑️ Limpar Todo o Pedido", type="secondary"):
         st.session_state.carrinho_df = pd.DataFrame(columns=["Data_Hora", "Solicitante", "Setor", "Categoria", "Item", "Quantidade", "Unidade", "Observacao"])
+        if arquivo_rascunho and os.path.exists(arquivo_rascunho): os.remove(arquivo_rascunho)
         st.rerun()
         
     st.write("---")
     
     if st.button("🚀 ENVIAR REQUISIÇÃO PARA A CENTRAL", type="primary", use_container_width=True):
         if "COLE_AQUI" in URL_WEB_APP:
-            st.error("Erro: Falta colocar a sua URL do Google Script na linha 13!")
+            st.error("Erro: Falta colocar a sua URL do Google Script na linha 14!")
         else:
             with st.spinner("Enviando dados diretamente para o Google Sheets..."):
                 try:
                     lista_pedidos = st.session_state.carrinho_df.to_dict(orient='records')
-                    
                     req = urllib.request.Request(URL_WEB_APP, method="POST")
                     req.add_header('Content-Type', 'application/json')
                     payload = json.dumps(lista_pedidos).encode('utf-8')
@@ -179,6 +198,7 @@ if not st.session_state.carrinho_df.empty:
                     else:
                         st.balloons()
                         st.success(f"🎉 Pedido enviado com sucesso para a central!")
+                        if arquivo_rascunho and os.path.exists(arquivo_rascunho): os.remove(arquivo_rascunho)
                         st.session_state.carrinho_df = pd.DataFrame(columns=["Data_Hora", "Solicitante", "Setor", "Categoria", "Item", "Quantidade", "Unidade", "Observacao"])
                         time.sleep(2)
                         st.rerun()
