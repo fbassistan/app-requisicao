@@ -13,7 +13,7 @@ st.set_page_config(page_title="Requisição Diária", page_icon="📝", layout="
 # ➔ SUA URL DO APP DA WEB DO GOOGLE SCRIPTS (Terminada em /exec)
 URL_WEB_APP = "https://script.google.com/macros/s/AKfycbzcNped3ftP-9FkLcWC-u65kl0RlX-rW2Z_8AHLGKgrw2ETjkoKJI2CHqisiSQnoUUb/exec"
 
-# Banco de Dados Final - 100% Padronizado com Unidades Técnicas de Mercado
+# Banco de Dados
 DADOS_SISTEMA = {
     "RESTAURANTE / COZINHA": {
         "CARNES / AVES": ["COSTELA BOI KG", "FILÉ MIGNON PEÇA KG", "HAMBURGER BOVINO 160 G", "CUPIM KG", "COXA SOBRECOXA KG", "FILE FRANGO KG", "RABADA KG", "MOCOTÔ KG", "PICANHA PEÇA", "BIFE ANCHO KG"],
@@ -37,168 +37,71 @@ DADOS_SISTEMA = {
     }
 }
 
-if 'usuario_anterior' not in st.session_state:
-    st.session_state.usuario_anterior = ""
+# Inicialização
+if 'usuario_anterior' not in st.session_state: st.session_state.usuario_anterior = ""
+if 'carrinho_df' not in st.session_state: st.session_state.carrinho_df = pd.DataFrame(columns=["Data_Hora", "Solicitante", "Setor", "Categoria", "Item", "Quantidade", "Unidade", "Observacao"])
+if 'reset_counter' not in st.session_state: st.session_state.reset_counter = 0
 
-def remover_acentos(texto):
-    return "".join(c for c in unicodedata.normalize('NFD', str(texto)) if unicodedata.category(c) != 'Mn').upper().strip()
+def remover_acentos(texto): return "".join(c for c in unicodedata.normalize('NFD', str(texto)) if unicodedata.category(c) != 'Mn').upper().strip()
 
 def separar_unidade(texto_item):
     texto = texto_item.strip().upper()
-    unidades_suportadas = ['KG', 'UND', 'LATA', 'PORÇÃO', 'BARRA', 'LT', 'ML', 'POTE', 'G', 'L', 'GFA', 'PCT', 'MAÇO', 'ROLO', 'CX', 'SAC', 'RESMA', 'BDJ', 'PEÇA']
-    for uni in unidades_suportadas:
-        if texto.endswith(" " + uni):
-            return texto[:-len(uni)].strip(), uni
-        if texto.endswith("(" + uni + ")"):
-            return texto[:-len(uni)-2].strip(), uni
-    match = re.search(r'\s+(\d+(?:G|ML|LT|MT|UND|K|KG|L))$', texto)
-    if match:
-        sufixo = match.group(1)
-        if not sufixo.isdigit():
-            return texto[:-len(sufixo)].strip(), sufixo
+    unidades = ['KG', 'UND', 'LATA', 'PORÇÃO', 'BARRA', 'LT', 'ML', 'POTE', 'G', 'L', 'GFA', 'PCT', 'MAÇO', 'ROLO', 'CX', 'SAC', 'RESMA', 'BDJ', 'PEÇA']
+    for uni in unidades:
+        if texto.endswith(" " + uni): return texto[:-len(uni)].strip(), uni
     return texto, "UND"
 
-if 'carrinho_df' not in st.session_state:
-    st.session_state.carrinho_df = pd.DataFrame(columns=["Data_Hora", "Solicitante", "Setor", "Categoria", "Item", "Quantidade", "Unidade", "Observacao"])
-
-if 'reset_counter' not in st.session_state:
-    st.session_state.reset_counter = 0
-
-st.title("📝 Sistema de Requisição Diária")
-
-nome_solicitante = st.text_input("Nome do Solicitante:", placeholder="Ex: João Silva")
+st.title("📝 Sistema de Requisição")
+nome_solicitante = st.text_input("Nome do Solicitante:")
 setor_selecionado = st.selectbox("Selecione o seu Setor:", list(DADOS_SISTEMA.keys()))
 
-arquivo_rascunho = None
-if nome_solicitante.strip():
-    nome_slug = re.sub(r'[^a-zA-Z0-9]', '_', nome_solicitante.strip().lower())
-    arquivo_rascunho = f"rascunho_{nome_slug}.json"
-    
-    if st.session_state.usuario_anterior != nome_solicitante.strip():
-        if os.path.exists(arquivo_rascunho):
-            try:
-                with open(arquivo_rascunho, "r", encoding="utf-8") as f:
-                    dados_salvos = json.load(f)
-                st.session_state.carrinho_df = pd.DataFrame(dados_salvos)
-                st.toast(f"🔄 Rascunho de {nome_solicitante} recuperado com sucesso!", icon="💾")
-            except:
-                pass
-        st.session_state.usuario_anterior = nome_solicitante.strip()
+# Carregar itens
+lista_itens_plana = sorted(list(set([item for sub in DADOS_SISTEMA[setor_selecionado].values() for item in sub])))
+opcoes = [f"{i} ({remover_acentos(i)})" if remover_acentos(i) != i else i for i in lista_itens_plana]
+mapeamento = {f"{i} ({remover_acentos(i)})" if remover_acentos(i) != i else i: i for i in lista_itens_plana}
 
-lista_itens_plana = []
-for subcat, itens in DADOS_SISTEMA[setor_selecionado].items():
-    lista_itens_plana.extend(itens)
-lista_itens_plana = sorted(list(set(lista_itens_plana)))
-
-opcoes_selectbox = []
-mapeamento_reverso = {}
-for item in lista_itens_plana:
-    item_sem = remover_acentos(item)
-    label = f"{item} ({item_sem})" if item_sem != item else item
-    opcoes_selectbox.append(label)
-    mapeamento_reverso[label] = item
-
-st.write("---")
-item_nao_cadastrado = st.checkbox("⚠️ O item NÃO está na lista? Marque aqui para digitar manualmente", key=f"manual_{st.session_state.reset_counter}")
+item_nao_cadastrado = st.checkbox("⚠️ Item NÃO está na lista?", key=f"manual_{st.session_state.reset_counter}")
 
 if item_nao_cadastrado:
-    item_bruto = st.text_input("Digite o nome completo do Item:", placeholder="Ex: NOVO PRODUTO", key=f"item_manual_{st.session_state.reset_counter}")
-    unidade_medida = st.selectbox("Selecione a Unidade:", ["UND", "KG", "L", "LATA", "PORÇÃO", "G", "ML", "GFA", "PCT", "MAÇO", "CX"], key=f"uni_manual_{st.session_state.reset_counter}")
+    item_bruto = st.text_input("Nome do Item:", key=f"item_manual_{st.session_state.reset_counter}")
+    unidade_medida = st.selectbox("Unidade:", ["UND", "KG", "L", "LATA", "PORÇÃO", "G", "ML", "GFA", "PCT", "MAÇO", "CX"], key=f"uni_manual_{st.session_state.reset_counter}")
     item_nome_limpo = item_bruto.upper().strip()
-    subcategoria_detectada = "MANUAL / NOVO ITEM"
+    subcategoria_detectada = "MANUAL"
 else:
-    item_bruto = st.selectbox("Busque e selecione o Item:", opcoes_selectbox, key=f"item_select_{st.session_state.reset_counter}")
-    item_original = mapeamento_reverso[item_bruto]
+    item_bruto = st.selectbox("Selecione o Item:", opcoes, key=f"item_select_{st.session_state.reset_counter}")
+    item_original = mapeamento[item_bruto]
     item_nome_limpo, unidade_medida = separar_unidade(item_original)
-    
-    subcategoria_detectada = "OUTROS"
-    for subcat, itens in DADOS_SISTEMA[setor_selecionado].items():
-        if item_original in itens:
-            subcategoria_detectada = subcat
-            break
+    subcategoria_detectada = next((sub for sub, itens in DADOS_SISTEMA[setor_selecionado].items() if item_original in itens), "OUTROS")
 
-st.info(f"⚖️ Unidade de medida: **{unidade_medida}**")
-quantidade = st.number_input(f"Quantidade necessária:", min_value=1, value=1, step=1, key=f"qtd_{st.session_state.reset_counter}")
-observacao = st.text_input("Observação (Opcional):", placeholder="Ex: Urgente, Marca específica...", key=f"obs_{st.session_state.reset_counter}")
+quantidade = st.number_input("Quantidade:", min_value=1, value=1, step=1, key=f"qtd_{st.session_state.reset_counter}")
+observacao = st.text_input("Observação:", key=f"obs_{st.session_state.reset_counter}")
 
-if st.button("➕ Adicionar Item ao Pedido", use_container_width=True):
-    if nome_solicitante.strip() == "":
-        st.error("Por favor, preencha o seu nome antes de adicionar itens.")
-    elif item_nome_limpo == "":
-        st.error("Por favor, selecione ou digite um item válido antes de adicionar.")
+if st.button("➕ Adicionar ao Pedido", use_container_width=True):
+    if not nome_solicitante.strip(): st.error("Preencha seu nome.")
+    elif not item_nome_limpo: st.error("Selecione um item.")
     else:
-        texto_obs = observacao.strip() if observacao.strip() != "" else "-"
-        
-        novo_registro = pd.DataFrame([{
-            "Data_Hora": datetime.now().strftime("%d/%m/%Y %H:%M"),
-            "Solicitante": nome_solicitante,
-            "Setor": setor_selecionado,
-            "Categoria": subcategoria_detectada,
-            "Item": item_nome_limpo,
-            "Quantidade": int(quantidade),
-            "Unidade": unidade_medida,
-            "Observacao": texto_obs
-        }])
-        
-        st.session_state.carrinho_df = pd.concat([st.session_state.carrinho_df, novo_registro], ignore_index=True)
-        st.success(f"Adicionado: {quantidade} {unidade_medida} de {item_nome_limpo}")
-        
+        texto_obs = observacao.strip() if observacao.strip() else "-"
+        mask = (st.session_state.carrinho_df["Item"] == item_nome_limpo) & (st.session_state.carrinho_df["Observacao"] == texto_obs)
+        if mask.any():
+            idx = st.session_state.carrinho_df[mask].index[0]
+            st.session_state.carrinho_df.at[idx, "Quantidade"] += int(quantidade)
+        else:
+            novo = pd.DataFrame([{"Data_Hora": datetime.now().strftime("%d/%m/%Y %H:%M"), "Solicitante": nome_solicitante, "Setor": setor_selecionado, "Categoria": subcategoria_detectada, "Item": item_nome_limpo, "Quantidade": int(quantidade), "Unidade": unidade_medida, "Observacao": texto_obs}])
+            st.session_state.carrinho_df = pd.concat([st.session_state.carrinho_df, novo], ignore_index=True)
         st.session_state.reset_counter += 1
-        time.sleep(0.5)
         st.rerun()
 
 if not st.session_state.carrinho_df.empty:
-    st.write("### 🛒 Itens no Pedido Atual")
-    st.caption("💡 Dica: Dê dois cliques na **Quantidade** ou **Observação** para alterar. Selecione a linha e clique na lixeira no canto da tabela para remover.")
+    st.write("### 🛒 Pedido Atual")
+    st.session_state.carrinho_df = st.data_editor(st.session_state.carrinho_df, column_config={"Data_Hora": None, "Solicitante": None, "Setor": None, "Categoria": None, "Item": st.column_config.TextColumn(disabled=True), "Unidade": st.column_config.TextColumn(disabled=True)}, use_container_width=True, num_rows="dynamic")
     
-    st.session_state.carrinho_df = st.data_editor(
-        st.session_state.carrinho_df,
-        column_config={
-            "Data_Hora": None, "Solicitante": None, "Setor": None, "Categoria": None,
-            "Item": st.column_config.TextColumn("Item", disabled=True),
-            "Unidade": st.column_config.TextColumn("Unidade", disabled=True),
-            "Quantidade": st.column_config.NumberColumn("Quantidade", min_value=1, step=1, required=True),
-            "Observacao": st.column_config.TextColumn("Observação (Clique para editar)")
-        },
-        use_container_width=True, num_rows="dynamic"
-    )
-    
-    if arquivo_rascunho:
-        if not st.session_state.carrinho_df.empty:
-            with open(arquivo_rascunho, "w", encoding="utf-8") as f:
-                json.dump(st.session_state.carrinho_df.to_dict(orient='records'), f, ensure_ascii=False, indent=2)
-        else:
-            if os.path.exists(arquivo_rascunho): os.remove(arquivo_rascunho)
-
-    if st.button("🗑️ Limpar Todo o Pedido", type="secondary"):
-        st.session_state.carrinho_df = pd.DataFrame(columns=["Data_Hora", "Solicitante", "Setor", "Categoria", "Item", "Quantidade", "Unidade", "Observacao"])
-        if arquivo_rascunho and os.path.exists(arquivo_rascunho): os.remove(arquivo_rascunho)
-        st.rerun()
-        
-    st.write("---")
-    
-    if st.button("🚀 ENVIAR REQUISIÇÃO PARA A CENTRAL", type="primary", use_container_width=True):
-        if "COLE_AQUI" in URL_WEB_APP:
-            st.error("Erro: Falta colocar a sua URL do Google Script na linha 13!")
-        else:
-            with st.spinner("Enviando dados diretamente para o Google Sheets..."):
-                try:
-                    lista_pedidos = st.session_state.carrinho_df.to_dict(orient='records')
-                    req = urllib.request.Request(URL_WEB_APP, method="POST")
-                    req.add_header('Content-Type', 'application/json')
-                    payload = json.dumps(lista_pedidos).encode('utf-8')
-                    
-                    with urllib.request.urlopen(req, data=payload) as response:
-                        resultado = response.read().decode('utf-8')
-                    
-                    if "Error" in resultado:
-                        st.error(f"Erro no Google Sheets: {resultado}")
-                    else:
-                        st.balloons()
-                        st.success(f"🎉 Pedido enviado com sucesso para a central!")
-                        if arquivo_rascunho and os.path.exists(arquivo_rascunho): os.remove(arquivo_rascunho)
-                        st.session_state.carrinho_df = pd.DataFrame(columns=["Data_Hora", "Solicitante", "Setor", "Categoria", "Item", "Quantidade", "Unidade", "Observacao"])
-                        time.sleep(2)
-                        st.rerun()
-                except Exception as e:
-                    st.error(f"Erro na transmissão: {e}")
+    if st.button("🚀 ENVIAR PARA A CENTRAL", type="primary", use_container_width=True):
+        try:
+            req = urllib.request.Request(URL_WEB_APP, method="POST", data=json.dumps(st.session_state.carrinho_df.to_dict(orient='records')).encode('utf-8'), headers={'Content-Type': 'application/json'})
+            with urllib.request.urlopen(req) as res:
+                if "Success" in res.read().decode('utf-8'):
+                    st.balloons()
+                    st.success("Enviado com sucesso!")
+                    st.session_state.carrinho_df = pd.DataFrame(columns=["Data_Hora", "Solicitante", "Setor", "Categoria", "Item", "Quantidade", "Unidade", "Observacao"])
+                    time.sleep(2); st.rerun()
+        except Exception as e: st.error(f"Erro: {e}")
