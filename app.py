@@ -17,7 +17,6 @@ URL_WEB_APP = "https://script.google.com/macros/s/AKfycbzcNped3ftP-9FkLcWC-u65kl
 @st.cache_data(ttl=300)  # Guarda os dados na memória por 5 minutos para o app ficar rápido
 def buscar_itens_nuvem():
     try:
-        # Faz uma requisição GET para a mesma URL do seu Web App
         with urllib.request.urlopen(URL_WEB_APP, timeout=10) as res:
             return json.loads(res.read().decode('utf-8'))
     except Exception as e:
@@ -48,7 +47,6 @@ setor_selecionado = st.selectbox("Selecione o seu Setor:", SETORES)
 # ==============================================================================
 mapeamento_itens = {}
 for item in NOVOS_ITENS:
-    # O .get() busca as chaves exatas que o Google Sheets vai retornar (em minúsculo)
     desc = item.get("descricao", "").strip().upper()
     if desc:
         mapeamento_itens[desc] = {
@@ -81,8 +79,8 @@ else:
         codigo_detectado = dados_item["codigo"]
         subcategoria_detectada = dados_item["categoria"]
         
-        # Exibe a unidade dinamicamente automática abaixo do item
-        st.text_input("Unidade do Item:", value=unidade_medida, disabled=True, key=f"uni_auto_{st.session_state.reset_counter}")
+        # ➔ MODIFICAÇÃO SOLICITADA: Mostra a unidade padrão como texto explicativo logo abaixo do item
+        st.markdown(f"⚖️ **Unidade de Medida Padrão:** `{unidade_medida}`")
     else:
         st.warning("Carregando lista de produtos ou a planilha na nuvem está vazia...")
         item_nome_limpo = ""
