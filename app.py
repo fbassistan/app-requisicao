@@ -5,6 +5,7 @@ import urllib.request
 import json
 import time
 import unicodedata
+import os  # ➔ REATIVADO: Necessário para salvar e deletar os arquivos de backup
 
 st.set_page_config(page_title="Requisição Diária", page_icon="📝", layout="centered")
 
@@ -14,7 +15,7 @@ URL_WEB_APP = "https://script.google.com/macros/s/AKfycbzcNped3ftP-9FkLcWC-u65kl
 # ==============================================================================
 # 1. FUNÇÃO PARA BUSCAR OS ITENS DIRETO DA NUVEM (GOOGLE SHEETS)
 # ==============================================================================
-@st.cache_data(ttl=300)  # Guarda os dados na memória por 5 minutos para o app ficar rápido
+@st.cache_data(ttl=300)
 def buscar_itens_nuvem():
     try:
         with urllib.request.urlopen(URL_WEB_APP, timeout=10) as res:
@@ -26,7 +27,7 @@ def buscar_itens_nuvem():
 # Carrega os itens dinamicamente da nuvem
 NOVOS_ITENS = buscar_itens_nuvem()
 
-# Lista fixa de Setores (Todos têm acesso à lista global)
+# Lista fixa de Setores
 SETORES = ["RESTAURANTE / COZINHA", "BAR", "SALÃO"]
 
 # Inicialização do Session State
@@ -41,6 +42,24 @@ def remover_acentos(texto):
 st.title("📝 Sistema de Requisição")
 nome_solicitante = st.text_input("Nome do Solicitante:")
 setor_selecionado = st.selectbox("Selecione o seu Setor:", SETORES)
+
+# ==============================================================================
+# SISTEMA DE RECUPERAÇÃO DE BACKUP (CASO A PÁGINA FECHE)
+# ==============================================================================
+nome_limpo_idx = remover_acentos(nome_solicitante).replace(" ", "_") if nome_solicitante.strip() else ""
+
+# Se o solicitante digitou o nome e mudou em relação ao estado anterior
+if nome_limpo_idx and st.session_state.usuario_anterior != nome_solicitante:
+    arquivo_backup = f"backup_{nome_limpo_idx}.csv"
+    if os.path.exists(arquivo_backup):
+        try:
+            # Recupera o arquivo CSV e joga de volta no carrinho do app
+            df_backup = pd.read_csv(arquivo_backup)
+            st.session_state.carrinho_df = df_backup
+            st.toast(f"🔄 Pedido anterior de {nome_solicitante} foi recuperado!")
+        except Exception:
+            pass
+    st.session_state.usuario_anterior = nome_solicitante
 
 # ==============================================================================
 # 2. PROCESSAMENTO E MAPEAMENTO DA LISTA GLOBAL
@@ -79,7 +98,6 @@ else:
         codigo_detectado = dados_item["codigo"]
         subcategoria_detectada = dados_item["categoria"]
         
-        # ➔ MODIFICAÇÃO SOLICITADA: Mostra a unidade padrão como texto explicativo logo abaixo do item
         st.markdown(f"⚖️ **Unidade de Medida Padrão:** `{unidade_medida}`")
     else:
         st.warning("Carregando lista de produtos ou a planilha na nuvem está vazia...")
@@ -120,6 +138,11 @@ if st.button("➕ Adicionar ao Pedido", use_container_width=True):
                 "Observacao": texto_obs
             }])
             st.session_state.carrinho_df = pd.concat([st.session_state.carrinho_df, novo], ignore_index=True)
+        
+        # ➔ SALVAMENTO AUTOMÁTICO: Salva o backup local sempre que um item for adicionado
+        if nome_limpo_idx:
+            st.session_state.carrinho_df.to_csv(f"backup_{nome_limpo_idx}.csv", index=False)
+            
         st.session_state.reset_counter += 1
         st.rerun()
 
@@ -140,6 +163,10 @@ if not st.session_state.carrinho_df.empty:
         num_rows="dynamic"
     )
     
+    # ➔ SALVAMENTO AUTOMÁTICO: Atualiza o backup caso o usuário delete ou mude a quantidade direto na tabela
+    if nome_limpo_idx:
+        st.session_state.carrinho_df.to_csv(f"backup_{nome_limpo_idx}.csv", index=False)
+    
     if st.button("🚀 ENVIAR PARA A CENTRAL", type="primary", use_container_width=True):
         try:
             req = urllib.request.Request(URL_WEB_APP, method="POST", data=json.dumps(st.session_state.carrinho_df.to_dict(orient='records')).encode('utf-8'), headers={'Content-Type': 'application/json'})
@@ -147,6 +174,11 @@ if not st.session_state.carrinho_df.empty:
                 if "Success" in res.read().decode('utf-8'):
                     st.balloons()
                     st.success("Enviado com sucesso!")
+                    
+                    # ➔ LIMPEZA DO BACKUP: Como o envio deu certo, deletamos o arquivo temporário
+                    if nome_limpo_idx and os.path.exists(f"backup_{nome_limpo_idx}.csv"):
+                        os.remove(f"backup_{nome_limpo_idx}.csv")
+                        
                     st.session_state.carrinho_df = pd.DataFrame(columns=["Data_Hora", "Solicitante", "Setor", "Codigo", "Categoria", "Item", "Quantidade", "Unidade", "Observacao"])
                     time.sleep(2); st.rerun()
         except Exception as e: st.error(f"Erro: {e}")
