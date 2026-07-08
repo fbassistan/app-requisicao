@@ -89,16 +89,31 @@ else:
         opcoes_display = [f"{i} ({remover_acentos(i)})" if remover_acentos(i) != i else i for i in opcoes_itens]
         mapeamento_display = {f"{i} ({remover_acentos(i)})" if remover_acentos(i) != i else i: i for i in opcoes_itens}
         
-        item_bruto_display = st.selectbox("Selecione o Item:", opcoes_display, key=f"item_select_{st.session_state.reset_counter}")
-        item_original_desc = mapeamento_display[item_bruto_display]
+        # ➔ ALTERAÇÃO AQUI: index=None faz começar vazio, placeholder define o texto inicial de instrução
+        item_bruto_display = st.selectbox(
+            "Selecione o Item:", 
+            opcoes_display, 
+            index=None, 
+            placeholder="Digite o nome do item para buscar...", 
+            key=f"item_select_{st.session_state.reset_counter}"
+        )
         
-        dados_item = mapeamento_itens[item_original_desc]
-        item_nome_limpo = item_original_desc
-        unidade_medida = dados_item["unidade"]
-        codigo_detectado = dados_item["codigo"]
-        subcategoria_detectada = dados_item["categoria"]
-        
-        st.markdown(f"⚖️ **Unidade de Medida Padrão:** `{unidade_medida}`")
+        # Verifica se o usuário de fato escolheu algo antes de ler os dados
+        if item_bruto_display:
+            item_original_desc = mapeamento_display[item_bruto_display]
+            dados_item = mapeamento_itens[item_original_desc]
+            item_nome_limpo = item_original_desc
+            unidade_medida = dados_item["unidade"]
+            codigo_detectado = dados_item["codigo"]
+            subcategoria_detectada = dados_item["categoria"]
+            
+            st.markdown(f"⚖️ **Unidade de Medida Padrão:** `{unidade_medida}`")
+        else:
+            # Caso esteja vazio (aguardando digitação)
+            item_nome_limpo = ""
+            unidade_medida = "UND"
+            codigo_detectado = "-"
+            subcategoria_detectada = "OUTROS"
     else:
         st.warning("Carregando lista de produtos ou a planilha na nuvem está vazia...")
         item_nome_limpo = ""
