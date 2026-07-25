@@ -1,2 +1,6 @@
+streamlit
 pandas
-openpyxl
+streamlit-mic-recorder
+sentence-transformers
+torch
+numpy
