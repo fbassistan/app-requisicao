@@ -10,11 +10,11 @@ import re
 import difflib
 import numpy as np
 
-# Leitores de arquivos
+# Leitores de arquivos (Excel, Word, PDF)
 import docx
 from pypdf import PdfReader
 
-# Componente para gravação de áudio e Biblioteca de IA Local
+# Componente de gravação de áudio e IA
 from streamlit_mic_recorder import speech_to_text
 from sentence_transformers import SentenceTransformer, util
 
@@ -24,11 +24,11 @@ st.set_page_config(page_title="Requisição Diária", page_icon="📝", layout="
 URL_WEB_APP = "https://script.google.com/macros/s/AKfycbzcNped3ftP-9FkLcWC-u65kl0RlX-rW2Z_8AHLGKgrw2ETjkoKJI2CHqisiSQnoUUb/exec"
 
 # ==============================================================================
-# 1. CARREGAMENTO DO MODELO DE INTELIGÊNCIA ARTIFICIAL LOCAL
+# 1. CARREGAMENTO DA IA LOCAL
 # ==============================================================================
 @st.cache_resource
 def carregar_modelo_ia():
-    # Modelo multilíngue leve e otimizado (~120MB), ideal para o servidor do Streamlit Cloud
+    # Modelo multilíngue leve e otimizado (~120MB)
     return SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
 modelo_ia = carregar_modelo_ia()
@@ -40,7 +40,7 @@ def calcular_embeddings_catalogo(_modelo, catalogo):
     return _modelo.encode(catalogo, convert_to_tensor=True)
 
 # ==============================================================================
-# 2. FUNÇÕES DE PROCESSAMENTO DE TEXTO, FALA E EXTRAÇÃO DE ARQUIVOS
+# 2. TRATAMENTO DE TEXTO, QUANTIDADE E BUSCA SUPER PRECISA
 # ==============================================================================
 def remover_acentos(texto): 
     return "".join(c for c in unicodedata.normalize('NFD', str(texto)) if unicodedata.category(c) != 'Mn').upper().strip()
@@ -51,20 +51,167 @@ def normalizar_texto(texto):
     texto_limpo = re.sub(r'[^A-Z0-9\s]', ' ', texto_sem_acento)
     return " ".join(texto_limpo.split())
 
-STOP_WORDS = {
-    "QUERO", "ME", "DA", "VEJA", "POR", "FAVOR", "MANDA", "COLOCA", "ADICIONA", 
-    "PRECISO", "DE", "DO", "DA", "DOS", "DAS", "E", "MAIS", "TAMBEM", "GOSTARIA",
-    "UNIDADE", "UNIDADES", "KILO", "KILOS", "QUILO", "QUILOS", "KG", "LATA", "LATAS", 
-    "PACOTE", "PACOTES", "GARRAFA", "GARRAFAS", "CAIXA", "CAIXAS", "UND", "PCT", "CX", "GFA", "POTE"
-}
-
 NUMEROS_EXTENSO = {
     "UM": 1, "UMA": 1, "DOIS": 2, "DUAS": 2, "TRES": 3, "TRÊS": 3, "QUATRO": 4, "CINCO": 5,
     "SEIS": 6, "SETE": 7, "OITO": 8, "NOVE": 9, "DEZ": 10, "ONZE": 11, "DOZE": 12,
     "QUINZE": 15, "VINTE": 20, "TRINTA": 30, "CINQUENTA": 50
 }
 
-# Leitor Universal de Documentos (Excel, Word e PDF)
+STOP_WORDS = {
+    "QUERO", "ME", "DA", "VEJA", "POR", "FAVOR", "MANDA", "COLOCA", "ADICIONA", 
+    "PRECISO", "DE", "DO", "DA", "DOS", "DAS", "E", "MAIS", "TAMBEM", "GOSTARIA",
+    "UNIDADE", "UNIDADES", "KILO", "KILOS", "QUILO", "QUILOS", "PACOTE", "PACOTES", 
+    "GARRAFA", "GARRAFAS", "CAIXA", "CAIXAS", "ITEM", "ITENS"
+}
+
+# Extrai quantidade e produto protegendo especificações (350ml, 500g, 1l, etc.)
+def extrair_qtd_e_item_inteligente(texto):
+    texto_upper = remover_acentos(texto)
+    
+    medidas_encontradas = {}
+    def salvar_medida(m):
+        idx = f"__MEDIDA_{len(medidas_encontradas)}__"
+        medidas_encontradas[idx] = m.group(0)
+        return f" {idx} "
+
+    # Pattern para volumes/pesos/códigos do catálogo (350ML, 1L, 500G, 2KG, C/ 06 UND, C/12)
+    padrão_specs = r'\b(?:\d+\s*(?:ML|G|GR|KG|L|CL)|C/\s*\d+(?:\s*UND)?)\b'
+    texto_protegido = re.sub(padrão_specs, salvar_medida, texto_upper)
+    
+    palavras = texto_protegido.split()
+    palavras_conv = []
+    for p in palavras:
+        if p in NUMEROS_EXTENSO:
+            palavras_conv.append(str(NUMEROS_EXTENSO[p]))
+        else:
+            palavras_conv.append(p)
+    texto_tratado = " ".join(palavras_conv)
+    
+    match_qtd = re.search(r'\b(\d+)\s*(?:X|\*|UNIDADES|UND|LATAS|GARRAFAS|CAIXAS|PACOTES)?\b', texto_tratado)
+    quantidade = 1
+    if match_qtd:
+        quantidade = int(match_qtd.group(1))
+        texto_tratado = texto_tratado[:match_qtd.start()] + texto_tratado[match_qtd.end():]
+        
+    for key, val in medidas_encontradas.items():
+        texto_tratado = texto_tratado.replace(key, val)
+        
+    tokens = normalizar_texto(texto_tratado).split()
+    termos_finais = [t for t in tokens if t not in STOP_WORDS]
+    termo_limpo = " ".join(termos_finais)
+    
+    return quantidade, termo_limpo
+
+def fatiar_texto_multiplos_itens(texto_completo):
+    texto_upper = remover_acentos(texto_completo)
+    
+    palavras = texto_upper.split()
+    palavras_conv = []
+    for p in palavras:
+        if p in NUMEROS_EXTENSO:
+            palavras_conv.append(str(NUMEROS_EXTENSO[p]))
+        else:
+            palavras_conv.append(p)
+    texto_tratado = " ".join(palavras_conv)
+    
+    clausulas = re.split(r'\b(?:E|MAIS|TAMBEM)\b|[,;\n\r]', texto_tratado)
+    
+    sub_frases = []
+    for c in clausulas:
+        c = c.strip()
+        if not c:
+            continue
+        tokens = c.split()
+        corrente = []
+        for token in tokens:
+            if token.isdigit() and corrente:
+                palavras_uteis = [w for w in corrente if w not in STOP_WORDS and not w.isdigit()]
+                if palavras_uteis:
+                    sub_frases.append(" ".join(corrente))
+                    corrente = [token]
+                else:
+                    corrente.append(token)
+            else:
+                corrente.append(token)
+        if corrente:
+            sub_frases.append(" ".join(corrente))
+            
+    resultados = []
+    for sf in sub_frases:
+        qtd, termo = extrair_qtd_e_item_inteligente(sf)
+        if termo.strip():
+            resultados.append((sf, qtd, termo))
+            
+    return resultados
+
+# Algoritmo de Busca de Máxima Precisão
+def encontrar_item_mais_parecido(termo_busca, catalogo_itens, embeddings_catalogo):
+    if not termo_busca or not catalogo_itens:
+        return None, 0.0
+        
+    termo_norm = normalizar_texto(termo_busca)
+    words_busca = termo_norm.split()
+    
+    if not words_busca:
+        return None, 0.0
+        
+    scores_ia = None
+    if modelo_ia is not None and embeddings_catalogo is not None:
+        try:
+            embedding_fala = modelo_ia.encode(termo_busca, convert_to_tensor=True)
+            scores_ia = util.cos_sim(embedding_fala, embeddings_catalogo)[0]
+        except Exception:
+            scores_ia = None
+            
+    melhor_item = None
+    melhor_score_final = 0.0
+    
+    for idx, item in enumerate(catalogo_itens):
+        item_norm = normalizar_texto(item)
+        words_item = item_norm.split()
+        
+        score_ia = float(scores_ia[idx]) if scores_ia is not None else 0.5
+        score_substring = 1.0 if termo_norm in item_norm else 0.0
+        
+        scores_palavras = []
+        for pb in words_busca:
+            best_p = 0.0
+            for pi in words_item:
+                if pb == pi:
+                    best_p = 1.0
+                    break
+                elif pb in pi or pi in pb:
+                    ratio_sub = min(len(pb), len(pi)) / max(len(pb), len(pi))
+                    best_p = max(best_p, 0.85 * ratio_sub)
+                else:
+                    ratio_seq = difflib.SequenceMatcher(None, pb, pi).ratio()
+                    best_p = max(best_p, ratio_seq)
+            scores_palavras.append(best_p)
+            
+        score_cobertura = sum(scores_palavras) / len(scores_palavras) if scores_palavras else 0.0
+        ratio_global = difflib.SequenceMatcher(None, termo_norm, item_norm).ratio()
+        
+        # Ponderação Combinada
+        score_final = (score_cobertura * 0.45) + (score_ia * 0.30) + (score_substring * 0.15) + (ratio_global * 0.10)
+        
+        # Bônus se todas as palavras do termo de busca foram encontradas no item
+        if all(any(pb == pi or pb in pi for pi in words_item) for pb in words_busca):
+            score_final += 0.15
+            
+        # Penalidade para palavras divergentes importantes (ex: ZERO)
+        if "ZERO" in words_item and "ZERO" not in words_busca:
+            score_final -= 0.10
+        elif "ZERO" in words_busca and "ZERO" not in words_item:
+            score_final -= 0.20
+            
+        if score_final > melhor_score_final:
+            melhor_score_final = score_final
+            melhor_item = item
+            
+    if melhor_score_final >= 0.30:
+        return melhor_item, melhor_score_final
+    return None, melhor_score_final
+
 def extrair_linhas_do_arquivo(uploaded_file):
     nome = uploaded_file.name.lower()
     linhas = []
@@ -106,116 +253,6 @@ def extrair_linhas_do_arquivo(uploaded_file):
             st.error(f"Erro ao ler arquivo PDF: {e}")
             
     return linhas
-
-# Separa texto ou fala em múltiplos itens e extrai suas quantidades
-def extrair_itens_da_fala(texto_falado):
-    texto_norm = normalizar_texto(texto_falado)
-    
-    palavras = texto_norm.split()
-    palavras_convertidas = []
-    for p in palavras:
-        if p in NUMEROS_EXTENSO:
-            palavras_convertidas.append(str(NUMEROS_EXTENSO[p]))
-        else:
-            palavras_convertidas.append(p)
-    texto_tratado = " ".join(palavras_convertidas)
-    
-    clausulas = re.split(r'\b(?:E|MAIS|TAMBEM)\b|[,;]', texto_tratado)
-    
-    sub_frases = []
-    for c in clausulas:
-        c = c.strip()
-        if not c:
-            continue
-        tokens = c.split()
-        corrente = []
-        for token in tokens:
-            if token.isdigit() and corrente:
-                palavras_uteis = [w for w in corrente if w not in STOP_WORDS and not w.isdigit()]
-                if palavras_uteis:
-                    sub_frases.append(" ".join(corrente))
-                    corrente = [token]
-                else:
-                    corrente.append(token)
-            else:
-                corrente.append(token)
-        if corrente:
-            sub_frases.append(" ".join(corrente))
-            
-    resultados = []
-    for sf in sub_frases:
-        tokens_sf = sf.split()
-        qtd = 1
-        termos = []
-        for t in tokens_sf:
-            if t.isdigit():
-                qtd = int(t)
-            elif t not in STOP_WORDS:
-                termos.append(t)
-        termo_busca = " ".join(termos)
-        
-        if termo_busca:
-            resultados.append((sf, qtd, termo_busca))
-            
-    return resultados
-
-# Algoritmo de Busca de Alta Precisão (IA + Substring + Matching Palavra-por-Palavra)
-def encontrar_item_super_assertivo(termo_busca, catalogo_itens, embeddings_catalogo):
-    if not termo_busca or not catalogo_itens or embeddings_catalogo is None:
-        return None, 0.0
-        
-    termo_norm = normalizar_texto(termo_busca)
-    words_busca = termo_norm.split()
-    
-    if not words_busca:
-        return None, 0.0
-        
-    embedding_fala = modelo_ia.encode(termo_busca, convert_to_tensor=True)
-    scores_ia = util.cos_sim(embedding_fala, embeddings_catalogo)[0]
-    
-    melhor_item = None
-    melhor_score_final = 0.0
-    
-    for idx, item in enumerate(catalogo_itens):
-        item_norm = normalizar_texto(item)
-        words_item = item_norm.split()
-        score_ia = float(scores_ia[idx])
-        
-        if termo_norm in item_norm:
-            score_substring = 1.0
-        else:
-            score_substring = 0.0
-            
-        scores_palavras = []
-        for pb in words_busca:
-            best_p = 0.0
-            for pi in words_item:
-                if pb == pi:
-                    best_p = 1.0
-                    break
-                elif pb in pi or pi in pb:
-                    ratio_sub = min(len(pb), len(pi)) / max(len(pb), len(pi))
-                    best_p = max(best_p, 0.88 * ratio_sub)
-                else:
-                    ratio_seq = difflib.SequenceMatcher(None, pb, pi).ratio()
-                    best_p = max(best_p, ratio_seq)
-            scores_palavras.append(best_p)
-            
-        score_cobertura = sum(scores_palavras) / len(scores_palavras) if scores_palavras else 0.0
-        ratio_global = difflib.SequenceMatcher(None, termo_norm, item_norm).ratio()
-        
-        score_final = (score_cobertura * 0.40) + (score_ia * 0.35) + (score_substring * 0.15) + (ratio_global * 0.10)
-        
-        if all(any(pb == pi or pb in pi for pi in words_item) for pb in words_busca):
-            score_final += 0.15
-            
-        if score_final > melhor_score_final:
-            melhor_score_final = score_final
-            melhor_item = item
-            
-    if melhor_score_final >= 0.35:
-        return melhor_item, melhor_score_final
-    return None, melhor_score_final
 
 # ==============================================================================
 # 3. BUSCA DOS DADOS NAVEGADOR / GOOGLE SHEETS
@@ -289,15 +326,15 @@ if texto_falado:
     if not nome_solicitante.strip():
         st.error("⚠️ Preencha seu nome no campo acima antes de ditar os itens!")
     else:
-        with st.spinner("🧠 Analisando fala e buscando nos produtos por completo..."):
-            itens_extraidos = extrair_itens_da_fala(texto_falado)
+        with st.spinner("🧠 Analisando fala e comparando com todos os produtos do catálogo..."):
+            itens_extraidos = fatiar_texto_multiplos_itens(texto_falado)
             embeddings_cat = calcular_embeddings_catalogo(modelo_ia, opcoes_itens)
             
             adicionados = []
             nao_encontrados = []
             
             for orig, qtd_detectada, termo_busca in itens_extraidos:
-                item_encontrado, score = encontrar_item_super_assertivo(termo_busca, opcoes_itens, embeddings_cat)
+                item_encontrado, score = encontrar_item_mais_parecido(termo_busca, opcoes_itens, embeddings_cat)
                 
                 if item_encontrado:
                     dados = mapeamento_itens[item_encontrado]
@@ -370,11 +407,10 @@ with st.expander("📄 **Anexar Arquivo com Lista de Itens (Excel, Word, PDF)**"
                     termos_nao_encontrados = []
                     
                     for linha in linhas_documento:
-                        # Extrai os itens e quantidades presentes em cada linha do documento
-                        itens_extraidos = extrair_itens_da_fala(linha)
+                        itens_extraidos = fatiar_texto_multiplos_itens(linha)
                         
                         for orig, qtd_detectada, termo_busca in itens_extraidos:
-                            item_encontrado, score = encontrar_item_super_assertivo(termo_busca, opcoes_itens, embeddings_cat)
+                            item_encontrado, score = encontrar_item_mais_parecido(termo_busca, opcoes_itens, embeddings_cat)
                             
                             if item_encontrado:
                                 dados = mapeamento_itens[item_encontrado]
