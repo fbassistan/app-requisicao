@@ -10,6 +10,10 @@ import re
 import difflib
 import numpy as np
 
+# Leitores de arquivos
+import docx
+from pypdf import PdfReader
+
 # Componente para gravação de áudio e Biblioteca de IA Local
 from streamlit_mic_recorder import speech_to_text
 from sentence_transformers import SentenceTransformer, util
@@ -36,7 +40,7 @@ def calcular_embeddings_catalogo(_modelo, catalogo):
     return _modelo.encode(catalogo, convert_to_tensor=True)
 
 # ==============================================================================
-# 2. FUNÇÕES DE PROCESSAMENTO DE TEXTO E FALA MULTI-ITENS
+# 2. FUNÇÕES DE PROCESSAMENTO DE TEXTO, FALA E EXTRAÇÃO DE ARQUIVOS
 # ==============================================================================
 def remover_acentos(texto): 
     return "".join(c for c in unicodedata.normalize('NFD', str(texto)) if unicodedata.category(c) != 'Mn').upper().strip()
@@ -60,11 +64,53 @@ NUMEROS_EXTENSO = {
     "QUINZE": 15, "VINTE": 20, "TRINTA": 30, "CINQUENTA": 50
 }
 
-# Separa a fala contínua em múltiplos itens e extrai suas quantidades
+# Leitor Universal de Documentos (Excel, Word e PDF)
+def extrair_linhas_do_arquivo(uploaded_file):
+    nome = uploaded_file.name.lower()
+    linhas = []
+    
+    if nome.endswith(('.xlsx', '.xls')):
+        try:
+            df = pd.read_excel(uploaded_file)
+            for _, row in df.iterrows():
+                linha_txt = " ".join([str(val) for val in row.values if pd.notna(val)])
+                if linha_txt.strip():
+                    linhas.append(linha_txt)
+        except Exception as e:
+            st.error(f"Erro ao ler arquivo Excel: {e}")
+            
+    elif nome.endswith('.docx'):
+        try:
+            doc = docx.Document(uploaded_file)
+            for p in doc.paragraphs:
+                if p.text.strip():
+                    linhas.append(p.text.strip())
+            for table in doc.tables:
+                for row in table.rows:
+                    linha_txt = " ".join([cell.text.strip() for cell in row.cells if cell.text.strip()])
+                    if linha_txt.strip():
+                        linhas.append(linha_txt)
+        except Exception as e:
+            st.error(f"Erro ao ler arquivo Word: {e}")
+            
+    elif nome.endswith('.pdf'):
+        try:
+            reader = PdfReader(uploaded_file)
+            for page in reader.pages:
+                texto = page.extract_text()
+                if texto:
+                    for l in texto.split('\n'):
+                        if l.strip():
+                            linhas.append(l.strip())
+        except Exception as e:
+            st.error(f"Erro ao ler arquivo PDF: {e}")
+            
+    return linhas
+
+# Separa texto ou fala em múltiplos itens e extrai suas quantidades
 def extrair_itens_da_fala(texto_falado):
     texto_norm = normalizar_texto(texto_falado)
     
-    # Substitui números por extenso por algarismos
     palavras = texto_norm.split()
     palavras_convertidas = []
     for p in palavras:
@@ -74,7 +120,6 @@ def extrair_itens_da_fala(texto_falado):
             palavras_convertidas.append(p)
     texto_tratado = " ".join(palavras_convertidas)
     
-    # Divide por vírgulas, 'E', 'MAIS', 'TAMBÉM'
     clausulas = re.split(r'\b(?:E|MAIS|TAMBEM)\b|[,;]', texto_tratado)
     
     sub_frases = []
@@ -125,7 +170,6 @@ def encontrar_item_super_assertivo(termo_busca, catalogo_itens, embeddings_catal
     if not words_busca:
         return None, 0.0
         
-    # 1. Similaridade Semântica via IA
     embedding_fala = modelo_ia.encode(termo_busca, convert_to_tensor=True)
     scores_ia = util.cos_sim(embedding_fala, embeddings_catalogo)[0]
     
@@ -137,13 +181,11 @@ def encontrar_item_super_assertivo(termo_busca, catalogo_itens, embeddings_catal
         words_item = item_norm.split()
         score_ia = float(scores_ia[idx])
         
-        # 2. Presença como Substring completa (ex: "FILE MIGNON" dentro de "FILÉ MIGNON PEÇA KG")
         if termo_norm in item_norm:
             score_substring = 1.0
         else:
             score_substring = 0.0
             
-        # 3. Match Palavra por Palavra (Partial Token Matching)
         scores_palavras = []
         for pb in words_busca:
             best_p = 0.0
@@ -162,11 +204,8 @@ def encontrar_item_super_assertivo(termo_busca, catalogo_itens, embeddings_catal
         score_cobertura = sum(scores_palavras) / len(scores_palavras) if scores_palavras else 0.0
         ratio_global = difflib.SequenceMatcher(None, termo_norm, item_norm).ratio()
         
-        # Ponderação Multicanal:
-        # 40% Cobertura de Palavras | 35% IA Semântica | 15% Substring Direta | 10% Ratio Global
         score_final = (score_cobertura * 0.40) + (score_ia * 0.35) + (score_substring * 0.15) + (ratio_global * 0.10)
         
-        # Bônus se todas as palavras faladas foram localizadas no item
         if all(any(pb == pi or pb in pi for pi in words_item) for pb in words_busca):
             score_final += 0.15
             
@@ -303,6 +342,83 @@ if texto_falado:
                 st.session_state.reset_counter += 1
                 time.sleep(1)
                 st.rerun()
+
+st.write("---")
+
+# ==============================================================================
+# 📄 MÓDULO DE ANEXAR DOCUMENTO (EXCEL, WORD, PDF)
+# ==============================================================================
+with st.expander("📄 **Anexar Arquivo com Lista de Itens (Excel, Word, PDF)**", expanded=False):
+    st.caption("Faça o upload de uma planilha, documento do Word ou PDF com a lista de itens desejados.")
+    
+    arquivo_enviado = st.file_uploader(
+        "Escolha o arquivo:", 
+        type=["xlsx", "xls", "docx", "pdf"],
+        key=f"uploader_{st.session_state.reset_counter}"
+    )
+    
+    if arquivo_enviado is not None:
+        if st.button("🔍 Processar Arquivo e Adicionar ao Carrinho", use_container_width=True):
+            if not nome_solicitante.strip():
+                st.error("⚠️ Preencha seu nome no campo acima antes de importar o arquivo!")
+            else:
+                with st.spinner("⚙️ Lendo documento e comparando com o catálogo..."):
+                    linhas_documento = extrair_linhas_do_arquivo(arquivo_enviado)
+                    embeddings_cat = calcular_embeddings_catalogo(modelo_ia, opcoes_itens)
+                    
+                    total_adicionados = 0
+                    termos_nao_encontrados = []
+                    
+                    for linha in linhas_documento:
+                        # Extrai os itens e quantidades presentes em cada linha do documento
+                        itens_extraidos = extrair_itens_da_fala(linha)
+                        
+                        for orig, qtd_detectada, termo_busca in itens_extraidos:
+                            item_encontrado, score = encontrar_item_super_assertivo(termo_busca, opcoes_itens, embeddings_cat)
+                            
+                            if item_encontrado:
+                                dados = mapeamento_itens[item_encontrado]
+                                cod, cat, uni = dados["codigo"], dados["categoria"], dados["unidade"]
+                                texto_obs = f"Importado de {arquivo_enviado.name}"
+                                
+                                mask = (st.session_state.carrinho_df["Item"] == item_encontrado) & \
+                                       (st.session_state.carrinho_df["Codigo"] == cod) & \
+                                       (st.session_state.carrinho_df["Observacao"] == texto_obs)
+                                       
+                                if mask.any():
+                                    idx = st.session_state.carrinho_df[mask].index[0]
+                                    st.session_state.carrinho_df.at[idx, "Quantidade"] += qtd_detectada
+                                else:
+                                    novo = pd.DataFrame([{
+                                        "Data_Hora": datetime.now().strftime("%d/%m/%Y %H:%M"), 
+                                        "Solicitante": nome_solicitante, 
+                                        "Setor": setor_selecionado, 
+                                        "Codigo": cod,
+                                        "Categoria": cat, 
+                                        "Item": item_encontrado, 
+                                        "Quantidade": qtd_detectada, 
+                                        "Unidade": uni, 
+                                        "Observacao": texto_obs
+                                    }])
+                                    st.session_state.carrinho_df = pd.concat([st.session_state.carrinho_df, novo], ignore_index=True)
+                                
+                                total_adicionados += 1
+                            else:
+                                if termo_busca not in termos_nao_encontrados:
+                                    termos_nao_encontrados.append(termo_busca)
+                    
+                    if total_adicionados > 0:
+                        if nome_limpo_idx:
+                            st.session_state.carrinho_df.to_csv(f"backup_{nome_limpo_idx}.csv", index=False)
+                        st.toast(f"✅ {total_adicionados} item(ns) importado(s) com sucesso!")
+                        
+                    if termos_nao_encontrados:
+                        st.warning(f"⚠️ Não foi possível mapear o(s) seguinte(s) termo(s) do arquivo: {', '.join(termos_nao_encontrados)}")
+                        
+                    if total_adicionados > 0:
+                        st.session_state.reset_counter += 1
+                        time.sleep(1)
+                        st.rerun()
 
 st.write("---")
 
