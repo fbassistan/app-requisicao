@@ -4,6 +4,3 @@ streamlit-mic-recorder
 sentence-transformers
 torch
 numpy
-openpyxl
-python-docx
-pypdf
