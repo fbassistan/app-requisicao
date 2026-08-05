@@ -10,11 +10,7 @@ import re
 import difflib
 import numpy as np
 
-# Leitores de arquivos (Excel, Word, PDF)
-import docx
-from pypdf import PdfReader
-
-# Componente de gravação de áudio e IA
+# Componente para gravação de áudio e Biblioteca de IA Local
 from streamlit_mic_recorder import speech_to_text
 from sentence_transformers import SentenceTransformer, util
 
@@ -24,11 +20,11 @@ st.set_page_config(page_title="Requisição Diária", page_icon="📝", layout="
 URL_WEB_APP = "https://script.google.com/macros/s/AKfycbzcNped3ftP-9FkLcWC-u65kl0RlX-rW2Z_8AHLGKgrw2ETjkoKJI2CHqisiSQnoUUb/exec"
 
 # ==============================================================================
-# 1. CARREGAMENTO DA IA LOCAL
+# 1. CARREGAMENTO DO MODELO DE INTELIGÊNCIA ARTIFICIAL LOCAL
 # ==============================================================================
 @st.cache_resource
 def carregar_modelo_ia():
-    # Modelo multilíngue leve e otimizado (~120MB)
+    # Modelo multilíngue leve e otimizado (~120MB), ideal para o servidor do Streamlit Cloud
     return SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
 modelo_ia = carregar_modelo_ia()
@@ -40,7 +36,7 @@ def calcular_embeddings_catalogo(_modelo, catalogo):
     return _modelo.encode(catalogo, convert_to_tensor=True)
 
 # ==============================================================================
-# 2. TRATAMENTO DE TEXTO, QUANTIDADE E BUSCA SUPER PRECISA
+# 2. FUNÇÕES DE PROCESSAMENTO DE TEXTO E FALA MULTI-ITENS
 # ==============================================================================
 def remover_acentos(texto): 
     return "".join(c for c in unicodedata.normalize('NFD', str(texto)) if unicodedata.category(c) != 'Mn').upper().strip()
@@ -51,70 +47,35 @@ def normalizar_texto(texto):
     texto_limpo = re.sub(r'[^A-Z0-9\s]', ' ', texto_sem_acento)
     return " ".join(texto_limpo.split())
 
+STOP_WORDS = {
+    "QUERO", "ME", "DA", "VEJA", "POR", "FAVOR", "MANDA", "COLOCA", "ADICIONA", 
+    "PRECISO", "DE", "DO", "DA", "DOS", "DAS", "E", "MAIS", "TAMBEM", "GOSTARIA",
+    "UNIDADE", "UNIDADES", "KILO", "KILOS", "QUILO", "QUILOS", "KG", "LATA", "LATAS", 
+    "PACOTE", "PACOTES", "GARRAFA", "GARRAFAS", "CAIXA", "CAIXAS", "UND", "PCT", "CX", "GFA", "POTE"
+}
+
 NUMEROS_EXTENSO = {
     "UM": 1, "UMA": 1, "DOIS": 2, "DUAS": 2, "TRES": 3, "TRÊS": 3, "QUATRO": 4, "CINCO": 5,
     "SEIS": 6, "SETE": 7, "OITO": 8, "NOVE": 9, "DEZ": 10, "ONZE": 11, "DOZE": 12,
     "QUINZE": 15, "VINTE": 20, "TRINTA": 30, "CINQUENTA": 50
 }
 
-STOP_WORDS = {
-    "QUERO", "ME", "DA", "VEJA", "POR", "FAVOR", "MANDA", "COLOCA", "ADICIONA", 
-    "PRECISO", "DE", "DO", "DA", "DOS", "DAS", "E", "MAIS", "TAMBEM", "GOSTARIA",
-    "UNIDADE", "UNIDADES", "KILO", "KILOS", "QUILO", "QUILOS", "PACOTE", "PACOTES", 
-    "GARRAFA", "GARRAFAS", "CAIXA", "CAIXAS", "ITEM", "ITENS"
-}
-
-# Extrai quantidade e produto protegendo especificações (350ml, 500g, 1l, etc.)
-def extrair_qtd_e_item_inteligente(texto):
-    texto_upper = remover_acentos(texto)
+# Separa a fala contínua em múltiplos itens e extrai suas quantidades
+def extrair_itens_da_fala(texto_falado):
+    texto_norm = normalizar_texto(texto_falado)
     
-    medidas_encontradas = {}
-    def salvar_medida(m):
-        idx = f"__MEDIDA_{len(medidas_encontradas)}__"
-        medidas_encontradas[idx] = m.group(0)
-        return f" {idx} "
-
-    # Pattern para volumes/pesos/códigos do catálogo (350ML, 1L, 500G, 2KG, C/ 06 UND, C/12)
-    padrão_specs = r'\b(?:\d+\s*(?:ML|G|GR|KG|L|CL)|C/\s*\d+(?:\s*UND)?)\b'
-    texto_protegido = re.sub(padrão_specs, salvar_medida, texto_upper)
-    
-    palavras = texto_protegido.split()
-    palavras_conv = []
+    # Substitui números por extenso por algarismos
+    palavras = texto_norm.split()
+    palavras_convertidas = []
     for p in palavras:
         if p in NUMEROS_EXTENSO:
-            palavras_conv.append(str(NUMEROS_EXTENSO[p]))
+            palavras_convertidas.append(str(NUMEROS_EXTENSO[p]))
         else:
-            palavras_conv.append(p)
-    texto_tratado = " ".join(palavras_conv)
+            palavras_convertidas.append(p)
+    texto_tratado = " ".join(palavras_convertidas)
     
-    match_qtd = re.search(r'\b(\d+)\s*(?:X|\*|UNIDADES|UND|LATAS|GARRAFAS|CAIXAS|PACOTES)?\b', texto_tratado)
-    quantidade = 1
-    if match_qtd:
-        quantidade = int(match_qtd.group(1))
-        texto_tratado = texto_tratado[:match_qtd.start()] + texto_tratado[match_qtd.end():]
-        
-    for key, val in medidas_encontradas.items():
-        texto_tratado = texto_tratado.replace(key, val)
-        
-    tokens = normalizar_texto(texto_tratado).split()
-    termos_finais = [t for t in tokens if t not in STOP_WORDS]
-    termo_limpo = " ".join(termos_finais)
-    
-    return quantidade, termo_limpo
-
-def fatiar_texto_multiplos_itens(texto_completo):
-    texto_upper = remover_acentos(texto_completo)
-    
-    palavras = texto_upper.split()
-    palavras_conv = []
-    for p in palavras:
-        if p in NUMEROS_EXTENSO:
-            palavras_conv.append(str(NUMEROS_EXTENSO[p]))
-        else:
-            palavras_conv.append(p)
-    texto_tratado = " ".join(palavras_conv)
-    
-    clausulas = re.split(r'\b(?:E|MAIS|TAMBEM)\b|[,;\n\r]', texto_tratado)
+    # Divide por vírgulas, 'E', 'MAIS', 'TAMBÉM'
+    clausulas = re.split(r'\b(?:E|MAIS|TAMBEM)\b|[,;]', texto_tratado)
     
     sub_frases = []
     for c in clausulas:
@@ -138,15 +99,24 @@ def fatiar_texto_multiplos_itens(texto_completo):
             
     resultados = []
     for sf in sub_frases:
-        qtd, termo = extrair_qtd_e_item_inteligente(sf)
-        if termo.strip():
-            resultados.append((sf, qtd, termo))
+        tokens_sf = sf.split()
+        qtd = 1
+        termos = []
+        for t in tokens_sf:
+            if t.isdigit():
+                qtd = int(t)
+            elif t not in STOP_WORDS:
+                termos.append(t)
+        termo_busca = " ".join(termos)
+        
+        if termo_busca:
+            resultados.append((sf, qtd, termo_busca))
             
     return resultados
 
-# Algoritmo de Busca de Máxima Precisão
-def encontrar_item_mais_parecido(termo_busca, catalogo_itens, embeddings_catalogo):
-    if not termo_busca or not catalogo_itens:
+# Algoritmo de Busca de Alta Precisão (IA + Substring + Matching Palavra-por-Palavra)
+def encontrar_item_super_assertivo(termo_busca, catalogo_itens, embeddings_catalogo):
+    if not termo_busca or not catalogo_itens or embeddings_catalogo is None:
         return None, 0.0
         
     termo_norm = normalizar_texto(termo_busca)
@@ -155,24 +125,25 @@ def encontrar_item_mais_parecido(termo_busca, catalogo_itens, embeddings_catalog
     if not words_busca:
         return None, 0.0
         
-    scores_ia = None
-    if modelo_ia is not None and embeddings_catalogo is not None:
-        try:
-            embedding_fala = modelo_ia.encode(termo_busca, convert_to_tensor=True)
-            scores_ia = util.cos_sim(embedding_fala, embeddings_catalogo)[0]
-        except Exception:
-            scores_ia = None
-            
+    # 1. Similaridade Semântica via IA
+    embedding_fala = modelo_ia.encode(termo_busca, convert_to_tensor=True)
+    scores_ia = util.cos_sim(embedding_fala, embeddings_catalogo)[0]
+    
     melhor_item = None
     melhor_score_final = 0.0
     
     for idx, item in enumerate(catalogo_itens):
         item_norm = normalizar_texto(item)
         words_item = item_norm.split()
+        score_ia = float(scores_ia[idx])
         
-        score_ia = float(scores_ia[idx]) if scores_ia is not None else 0.5
-        score_substring = 1.0 if termo_norm in item_norm else 0.0
-        
+        # 2. Presença como Substring completa (ex: "FILE MIGNON" dentro de "FILÉ MIGNON PEÇA KG")
+        if termo_norm in item_norm:
+            score_substring = 1.0
+        else:
+            score_substring = 0.0
+            
+        # 3. Match Palavra por Palavra (Partial Token Matching)
         scores_palavras = []
         for pb in words_busca:
             best_p = 0.0
@@ -182,7 +153,7 @@ def encontrar_item_mais_parecido(termo_busca, catalogo_itens, embeddings_catalog
                     break
                 elif pb in pi or pi in pb:
                     ratio_sub = min(len(pb), len(pi)) / max(len(pb), len(pi))
-                    best_p = max(best_p, 0.85 * ratio_sub)
+                    best_p = max(best_p, 0.88 * ratio_sub)
                 else:
                     ratio_seq = difflib.SequenceMatcher(None, pb, pi).ratio()
                     best_p = max(best_p, ratio_seq)
@@ -191,68 +162,21 @@ def encontrar_item_mais_parecido(termo_busca, catalogo_itens, embeddings_catalog
         score_cobertura = sum(scores_palavras) / len(scores_palavras) if scores_palavras else 0.0
         ratio_global = difflib.SequenceMatcher(None, termo_norm, item_norm).ratio()
         
-        # Ponderação Combinada
-        score_final = (score_cobertura * 0.45) + (score_ia * 0.30) + (score_substring * 0.15) + (ratio_global * 0.10)
+        # Ponderação Multicanal:
+        # 40% Cobertura de Palavras | 35% IA Semântica | 15% Substring Direta | 10% Ratio Global
+        score_final = (score_cobertura * 0.40) + (score_ia * 0.35) + (score_substring * 0.15) + (ratio_global * 0.10)
         
-        # Bônus se todas as palavras do termo de busca foram encontradas no item
+        # Bônus se todas as palavras faladas foram localizadas no item
         if all(any(pb == pi or pb in pi for pi in words_item) for pb in words_busca):
             score_final += 0.15
-            
-        # Penalidade para palavras divergentes importantes (ex: ZERO)
-        if "ZERO" in words_item and "ZERO" not in words_busca:
-            score_final -= 0.10
-        elif "ZERO" in words_busca and "ZERO" not in words_item:
-            score_final -= 0.20
             
         if score_final > melhor_score_final:
             melhor_score_final = score_final
             melhor_item = item
             
-    if melhor_score_final >= 0.30:
+    if melhor_score_final >= 0.35:
         return melhor_item, melhor_score_final
     return None, melhor_score_final
-
-def extrair_linhas_do_arquivo(uploaded_file):
-    nome = uploaded_file.name.lower()
-    linhas = []
-    
-    if nome.endswith(('.xlsx', '.xls')):
-        try:
-            df = pd.read_excel(uploaded_file)
-            for _, row in df.iterrows():
-                linha_txt = " ".join([str(val) for val in row.values if pd.notna(val)])
-                if linha_txt.strip():
-                    linhas.append(linha_txt)
-        except Exception as e:
-            st.error(f"Erro ao ler arquivo Excel: {e}")
-            
-    elif nome.endswith('.docx'):
-        try:
-            doc = docx.Document(uploaded_file)
-            for p in doc.paragraphs:
-                if p.text.strip():
-                    linhas.append(p.text.strip())
-            for table in doc.tables:
-                for row in table.rows:
-                    linha_txt = " ".join([cell.text.strip() for cell in row.cells if cell.text.strip()])
-                    if linha_txt.strip():
-                        linhas.append(linha_txt)
-        except Exception as e:
-            st.error(f"Erro ao ler arquivo Word: {e}")
-            
-    elif nome.endswith('.pdf'):
-        try:
-            reader = PdfReader(uploaded_file)
-            for page in reader.pages:
-                texto = page.extract_text()
-                if texto:
-                    for l in texto.split('\n'):
-                        if l.strip():
-                            linhas.append(l.strip())
-        except Exception as e:
-            st.error(f"Erro ao ler arquivo PDF: {e}")
-            
-    return linhas
 
 # ==============================================================================
 # 3. BUSCA DOS DADOS NAVEGADOR / GOOGLE SHEETS
@@ -326,15 +250,15 @@ if texto_falado:
     if not nome_solicitante.strip():
         st.error("⚠️ Preencha seu nome no campo acima antes de ditar os itens!")
     else:
-        with st.spinner("🧠 Analisando fala e comparando com todos os produtos do catálogo..."):
-            itens_extraidos = fatiar_texto_multiplos_itens(texto_falado)
+        with st.spinner("🧠 Analisando fala e buscando nos produtos por completo..."):
+            itens_extraidos = extrair_itens_da_fala(texto_falado)
             embeddings_cat = calcular_embeddings_catalogo(modelo_ia, opcoes_itens)
             
             adicionados = []
             nao_encontrados = []
             
             for orig, qtd_detectada, termo_busca in itens_extraidos:
-                item_encontrado, score = encontrar_item_mais_parecido(termo_busca, opcoes_itens, embeddings_cat)
+                item_encontrado, score = encontrar_item_super_assertivo(termo_busca, opcoes_itens, embeddings_cat)
                 
                 if item_encontrado:
                     dados = mapeamento_itens[item_encontrado]
@@ -379,82 +303,6 @@ if texto_falado:
                 st.session_state.reset_counter += 1
                 time.sleep(1)
                 st.rerun()
-
-st.write("---")
-
-# ==============================================================================
-# 📄 MÓDULO DE ANEXAR DOCUMENTO (EXCEL, WORD, PDF)
-# ==============================================================================
-with st.expander("📄 **Anexar Arquivo com Lista de Itens (Excel, Word, PDF)**", expanded=False):
-    st.caption("Faça o upload de uma planilha, documento do Word ou PDF com a lista de itens desejados.")
-    
-    arquivo_enviado = st.file_uploader(
-        "Escolha o arquivo:", 
-        type=["xlsx", "xls", "docx", "pdf"],
-        key=f"uploader_{st.session_state.reset_counter}"
-    )
-    
-    if arquivo_enviado is not None:
-        if st.button("🔍 Processar Arquivo e Adicionar ao Carrinho", use_container_width=True):
-            if not nome_solicitante.strip():
-                st.error("⚠️ Preencha seu nome no campo acima antes de importar o arquivo!")
-            else:
-                with st.spinner("⚙️ Lendo documento e comparando com o catálogo..."):
-                    linhas_documento = extrair_linhas_do_arquivo(arquivo_enviado)
-                    embeddings_cat = calcular_embeddings_catalogo(modelo_ia, opcoes_itens)
-                    
-                    total_adicionados = 0
-                    termos_nao_encontrados = []
-                    
-                    for linha in linhas_documento:
-                        itens_extraidos = fatiar_texto_multiplos_itens(linha)
-                        
-                        for orig, qtd_detectada, termo_busca in itens_extraidos:
-                            item_encontrado, score = encontrar_item_mais_parecido(termo_busca, opcoes_itens, embeddings_cat)
-                            
-                            if item_encontrado:
-                                dados = mapeamento_itens[item_encontrado]
-                                cod, cat, uni = dados["codigo"], dados["categoria"], dados["unidade"]
-                                texto_obs = f"Importado de {arquivo_enviado.name}"
-                                
-                                mask = (st.session_state.carrinho_df["Item"] == item_encontrado) & \
-                                       (st.session_state.carrinho_df["Codigo"] == cod) & \
-                                       (st.session_state.carrinho_df["Observacao"] == texto_obs)
-                                       
-                                if mask.any():
-                                    idx = st.session_state.carrinho_df[mask].index[0]
-                                    st.session_state.carrinho_df.at[idx, "Quantidade"] += qtd_detectada
-                                else:
-                                    novo = pd.DataFrame([{
-                                        "Data_Hora": datetime.now().strftime("%d/%m/%Y %H:%M"), 
-                                        "Solicitante": nome_solicitante, 
-                                        "Setor": setor_selecionado, 
-                                        "Codigo": cod,
-                                        "Categoria": cat, 
-                                        "Item": item_encontrado, 
-                                        "Quantidade": qtd_detectada, 
-                                        "Unidade": uni, 
-                                        "Observacao": texto_obs
-                                    }])
-                                    st.session_state.carrinho_df = pd.concat([st.session_state.carrinho_df, novo], ignore_index=True)
-                                
-                                total_adicionados += 1
-                            else:
-                                if termo_busca not in termos_nao_encontrados:
-                                    termos_nao_encontrados.append(termo_busca)
-                    
-                    if total_adicionados > 0:
-                        if nome_limpo_idx:
-                            st.session_state.carrinho_df.to_csv(f"backup_{nome_limpo_idx}.csv", index=False)
-                        st.toast(f"✅ {total_adicionados} item(ns) importado(s) com sucesso!")
-                        
-                    if termos_nao_encontrados:
-                        st.warning(f"⚠️ Não foi possível mapear o(s) seguinte(s) termo(s) do arquivo: {', '.join(termos_nao_encontrados)}")
-                        
-                    if total_adicionados > 0:
-                        st.session_state.reset_counter += 1
-                        time.sleep(1)
-                        st.rerun()
 
 st.write("---")
 
