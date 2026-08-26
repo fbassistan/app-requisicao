@@ -8,11 +8,9 @@ import unicodedata
 import os
 import re
 import difflib
-import numpy as np
 
-# Componente para gravação de áudio e Biblioteca de IA Local
+# Componente leve para gravação de áudio do navegador
 from streamlit_mic_recorder import speech_to_text
-from sentence_transformers import SentenceTransformer, util
 
 st.set_page_config(page_title="Requisição Diária", page_icon="📝", layout="centered")
 
@@ -20,23 +18,27 @@ st.set_page_config(page_title="Requisição Diária", page_icon="📝", layout="
 URL_WEB_APP = "https://script.google.com/macros/s/AKfycbzcNped3ftP-9FkLcWC-u65kl0RlX-rW2Z_8AHLGKgrw2ETjkoKJI2CHqisiSQnoUUb/exec"
 
 # ==============================================================================
-# 1. CARREGAMENTO DO MODELO DE INTELIGÊNCIA ARTIFICIAL LOCAL
+# 1. FUNÇÃO COM RETRY AUTOMÁTICO PARA CARREGAR PRODUTOS DA NUVEM
 # ==============================================================================
-@st.cache_resource
-def carregar_modelo_ia():
-    # Modelo multilíngue leve e otimizado (~120MB), ideal para o servidor do Streamlit Cloud
-    return SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
-
-modelo_ia = carregar_modelo_ia()
-
-@st.cache_data
-def calcular_embeddings_catalogo(_modelo, catalogo):
-    if not catalogo:
-        return None
-    return _modelo.encode(catalogo, convert_to_tensor=True)
+@st.cache_data(ttl=300, show_spinner=False)
+def buscar_itens_nuvem():
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    
+    # Tenta até 3 vezes se a conexão com o Google Sheets oscilar ou demorar
+    for tentativa in range(3):
+        try:
+            req = urllib.request.Request(URL_WEB_APP, headers=headers)
+            with urllib.request.urlopen(req, timeout=12) as res:
+                dados = json.loads(res.read().decode('utf-8'))
+                if isinstance(dados, list) and len(dados) > 0:
+                    return dados
+        except Exception:
+            time.sleep(1) # Aguarda 1 segundo antes de tentar novamente
+            
+    return []
 
 # ==============================================================================
-# 2. FUNÇÕES DE PROCESSAMENTO DE TEXTO E FALA MULTI-ITENS
+# 2. ALGORITMO LEVE DE TRATAMENTO DE TEXTO E BUSCA POR VOZ
 # ==============================================================================
 def remover_acentos(texto): 
     return "".join(c for c in unicodedata.normalize('NFD', str(texto)) if unicodedata.category(c) != 'Mn').upper().strip()
@@ -47,41 +49,62 @@ def normalizar_texto(texto):
     texto_limpo = re.sub(r'[^A-Z0-9\s]', ' ', texto_sem_acento)
     return " ".join(texto_limpo.split())
 
-STOP_WORDS = {
-    "QUERO", "ME", "DA", "VEJA", "POR", "FAVOR", "MANDA", "COLOCA", "ADICIONA", 
-    "PRECISO", "DE", "DO", "DA", "DOS", "DAS", "E", "MAIS", "TAMBEM", "GOSTARIA",
-    "UNIDADE", "UNIDADES", "KILO", "KILOS", "QUILO", "QUILOS", "KG", "LATA", "LATAS", 
-    "PACOTE", "PACOTES", "GARRAFA", "GARRAFAS", "CAIXA", "CAIXAS", "UND", "PCT", "CX", "GFA", "POTE"
-}
-
 NUMEROS_EXTENSO = {
     "UM": 1, "UMA": 1, "DOIS": 2, "DUAS": 2, "TRES": 3, "TRÊS": 3, "QUATRO": 4, "CINCO": 5,
     "SEIS": 6, "SETE": 7, "OITO": 8, "NOVE": 9, "DEZ": 10, "ONZE": 11, "DOZE": 12,
     "QUINZE": 15, "VINTE": 20, "TRINTA": 30, "CINQUENTA": 50
 }
 
-# Separa a fala contínua em múltiplos itens e extrai suas quantidades
-def extrair_itens_da_fala(texto_falado):
-    texto_norm = normalizar_texto(texto_falado)
+STOP_WORDS = {
+    "QUERO", "ME", "DA", "VEJA", "POR", "FAVOR", "MANDA", "COLOCA", "ADICIONA", 
+    "PRECISO", "DE", "DO", "DA", "DOS", "DAS", "E", "MAIS", "TAMBEM", "GOSTARIA",
+    "UNIDADE", "UNIDADES", "KILO", "KILOS", "QUILO", "QUILOS", "PACOTE", "PACOTES", 
+    "GARRAFA", "GARRAFAS", "CAIXA", "CAIXAS", "ITEM", "ITENS"
+}
+
+# Extrai quantidade mantendo especificações protegidas (350ml, 500g, etc.)
+def extrair_qtd_e_item(texto):
+    texto_upper = remover_acentos(texto)
     
-    # Substitui números por extenso por algarismos
-    palavras = texto_norm.split()
-    palavras_convertidas = []
-    for p in palavras:
-        if p in NUMEROS_EXTENSO:
-            palavras_convertidas.append(str(NUMEROS_EXTENSO[p]))
-        else:
-            palavras_convertidas.append(p)
-    texto_tratado = " ".join(palavras_convertidas)
+    medidas_encontradas = {}
+    def salvar_medida(m):
+        idx = f"__MEDIDA_{len(medidas_encontradas)}__"
+        medidas_encontradas[idx] = m.group(0)
+        return f" {idx} "
+
+    padrão_specs = r'\b(?:\d+\s*(?:ML|G|GR|KG|L|CL)|C/\s*\d+(?:\s*UND)?)\b'
+    texto_protegido = re.sub(padrão_specs, salvar_medida, texto_upper)
     
-    # Divide por vírgulas, 'E', 'MAIS', 'TAMBÉM'
-    clausulas = re.split(r'\b(?:E|MAIS|TAMBEM)\b|[,;]', texto_tratado)
+    palavras = texto_protegido.split()
+    palavras_conv = [str(NUMEROS_EXTENSO[p]) if p in NUMEROS_EXTENSO else p for p in palavras]
+    texto_tratado = " ".join(palavras_conv)
+    
+    match_qtd = re.search(r'\b(\d+)\s*(?:X|\*|UNIDADES|UND|LATAS|GARRAFAS|CAIXAS|PACOTES)?\b', texto_tratado)
+    quantidade = 1
+    if match_qtd:
+        quantidade = int(match_qtd.group(1))
+        texto_tratado = texto_tratado[:match_qtd.start()] + texto_tratado[match_qtd.end():]
+        
+    for key, val in medidas_encontradas.items():
+        texto_tratado = texto_tratado.replace(key, val)
+        
+    tokens = normalizar_texto(texto_tratado).split()
+    termos_finais = [t for t in tokens if t not in STOP_WORDS]
+    
+    return quantidade, " ".join(termos_finais)
+
+def fatiar_texto_multiplos_itens(texto_completo):
+    texto_upper = remover_acentos(texto_completo)
+    palavras = texto_upper.split()
+    palavras_conv = [str(NUMEROS_EXTENSO[p]) if p in NUMEROS_EXTENSO else p for p in palavras]
+    texto_tratado = " ".join(palavras_conv)
+    
+    clausulas = re.split(r'\b(?:E|MAIS|TAMBEM)\b|[,;\n\r]', texto_tratado)
     
     sub_frases = []
     for c in clausulas:
         c = c.strip()
-        if not c:
-            continue
+        if not c: continue
         tokens = c.split()
         corrente = []
         for token in tokens:
@@ -99,24 +122,15 @@ def extrair_itens_da_fala(texto_falado):
             
     resultados = []
     for sf in sub_frases:
-        tokens_sf = sf.split()
-        qtd = 1
-        termos = []
-        for t in tokens_sf:
-            if t.isdigit():
-                qtd = int(t)
-            elif t not in STOP_WORDS:
-                termos.append(t)
-        termo_busca = " ".join(termos)
-        
-        if termo_busca:
-            resultados.append((sf, qtd, termo_busca))
+        qtd, termo = extrair_qtd_e_item(sf)
+        if termo.strip():
+            resultados.append((sf, qtd, termo))
             
     return resultados
 
-# Algoritmo de Busca de Alta Precisão (IA + Substring + Matching Palavra-por-Palavra)
-def encontrar_item_super_assertivo(termo_busca, catalogo_itens, embeddings_catalogo):
-    if not termo_busca or not catalogo_itens or embeddings_catalogo is None:
+# Algoritmo de busca por palavras-chave e similaridade matemática
+def encontrar_item_mais_parecido(termo_busca, catalogo_itens):
+    if not termo_busca or not catalogo_itens:
         return None, 0.0
         
     termo_norm = normalizar_texto(termo_busca)
@@ -125,25 +139,15 @@ def encontrar_item_super_assertivo(termo_busca, catalogo_itens, embeddings_catal
     if not words_busca:
         return None, 0.0
         
-    # 1. Similaridade Semântica via IA
-    embedding_fala = modelo_ia.encode(termo_busca, convert_to_tensor=True)
-    scores_ia = util.cos_sim(embedding_fala, embeddings_catalogo)[0]
-    
     melhor_item = None
     melhor_score_final = 0.0
     
-    for idx, item in enumerate(catalogo_itens):
+    for item in catalogo_itens:
         item_norm = normalizar_texto(item)
         words_item = item_norm.split()
-        score_ia = float(scores_ia[idx])
         
-        # 2. Presença como Substring completa (ex: "FILE MIGNON" dentro de "FILÉ MIGNON PEÇA KG")
-        if termo_norm in item_norm:
-            score_substring = 1.0
-        else:
-            score_substring = 0.0
-            
-        # 3. Match Palavra por Palavra (Partial Token Matching)
+        score_substring = 1.0 if termo_norm in item_norm else 0.0
+        
         scores_palavras = []
         for pb in words_busca:
             best_p = 0.0
@@ -153,7 +157,7 @@ def encontrar_item_super_assertivo(termo_busca, catalogo_itens, embeddings_catal
                     break
                 elif pb in pi or pi in pb:
                     ratio_sub = min(len(pb), len(pi)) / max(len(pb), len(pi))
-                    best_p = max(best_p, 0.88 * ratio_sub)
+                    best_p = max(best_p, 0.85 * ratio_sub)
                 else:
                     ratio_seq = difflib.SequenceMatcher(None, pb, pi).ratio()
                     best_p = max(best_p, ratio_seq)
@@ -162,34 +166,28 @@ def encontrar_item_super_assertivo(termo_busca, catalogo_itens, embeddings_catal
         score_cobertura = sum(scores_palavras) / len(scores_palavras) if scores_palavras else 0.0
         ratio_global = difflib.SequenceMatcher(None, termo_norm, item_norm).ratio()
         
-        # Ponderação Multicanal:
-        # 40% Cobertura de Palavras | 35% IA Semântica | 15% Substring Direta | 10% Ratio Global
-        score_final = (score_cobertura * 0.40) + (score_ia * 0.35) + (score_substring * 0.15) + (ratio_global * 0.10)
+        # Ponderação Combinada
+        score_final = (score_cobertura * 0.60) + (score_substring * 0.25) + (ratio_global * 0.15)
         
-        # Bônus se todas as palavras faladas foram localizadas no item
         if all(any(pb == pi or pb in pi for pi in words_item) for pb in words_busca):
             score_final += 0.15
+            
+        if "ZERO" in words_item and "ZERO" not in words_busca:
+            score_final -= 0.15
+        elif "ZERO" in words_busca and "ZERO" not in words_item:
+            score_final -= 0.25
             
         if score_final > melhor_score_final:
             melhor_score_final = score_final
             melhor_item = item
             
-    if melhor_score_final >= 0.35:
+    if melhor_score_final >= 0.30:
         return melhor_item, melhor_score_final
     return None, melhor_score_final
 
 # ==============================================================================
-# 3. BUSCA DOS DADOS NAVEGADOR / GOOGLE SHEETS
+# 3. CARREGAMENTO DOS DADOS E NAVEGAÇÃO
 # ==============================================================================
-@st.cache_data(ttl=300)
-def buscar_itens_nuvem():
-    try:
-        with urllib.request.urlopen(URL_WEB_APP, timeout=10) as res:
-            return json.loads(res.read().decode('utf-8'))
-    except Exception as e:
-        st.error(f"Erro ao carregar produtos da nuvem: {e}")
-        return []
-
 NOVOS_ITENS = buscar_itens_nuvem()
 SETORES = ["RESTAURANTE / COZINHA", "BAR", "SALÃO"]
 
@@ -198,11 +196,19 @@ if 'carrinho_df' not in st.session_state:
     st.session_state.carrinho_df = pd.DataFrame(columns=["Data_Hora", "Solicitante", "Setor", "Codigo", "Categoria", "Item", "Quantidade", "Unidade", "Observacao"])
 if 'reset_counter' not in st.session_state: st.session_state.reset_counter = 0
 
-# ==============================================================================
-# INTERFACE PRINCIPAL
-# ==============================================================================
 st.title("📝 Sistema de Requisição")
-nome_solicitante = st.text_input("Nome do Solicitante:")
+
+# Botão de emergência caso precise forçar a busca da planilha na nuvem
+col_sol, col_btn = st.columns([3, 1])
+with col_sol:
+    nome_solicitante = st.text_input("Nome do Solicitante:")
+with col_btn:
+    st.write("")
+    st.write("")
+    if st.button("🔄 Atualizar Lista", help="Clique para recarregar os produtos da nuvem"):
+        st.cache_data.clear()
+        st.rerun()
+
 setor_selecionado = st.selectbox("Selecione o seu Setor:", SETORES)
 
 # Backup local por usuário
@@ -219,7 +225,7 @@ if nome_limpo_idx and st.session_state.usuario_anterior != nome_solicitante:
             pass
     st.session_state.usuario_anterior = nome_solicitante
 
-# Processamento da Lista Global do catálogo
+# Mapeamento dos Itens
 mapeamento_itens = {}
 for item in NOVOS_ITENS:
     desc = item.get("descricao", "").strip().upper()
@@ -233,10 +239,10 @@ for item in NOVOS_ITENS:
 opcoes_itens = sorted(list(mapeamento_itens.keys()))
 
 # ==============================================================================
-# 🎙️ MÓDULO DE FALA MULTI-ITENS INTELIGENTE COM IA
+# 🎙️ MÓDULO DE FALA MULTI-ITENS
 # ==============================================================================
-st.write("### 🎙️ Ditar Múltiplos Itens por Voz (IA)")
-st.caption("Exemplo de fala contínua: *'Quero 3 filé mignon, 2 heineken e 5 coca cola'*")
+st.write("### 🎙️ Ditar Múltiplos Itens por Voz")
+st.caption("Exemplo: *'Quero 3 filé mignon, 2 heineken e 5 coca cola'*")
 
 texto_falado = speech_to_text(
     language='pt-BR',
@@ -249,16 +255,17 @@ texto_falado = speech_to_text(
 if texto_falado:
     if not nome_solicitante.strip():
         st.error("⚠️ Preencha seu nome no campo acima antes de ditar os itens!")
+    elif not opcoes_itens:
+        st.error("⚠️ A lista de produtos está vazia ou ainda sendo carregada. Clique em '🔄 Atualizar Lista'.")
     else:
-        with st.spinner("🧠 Analisando fala e buscando nos produtos por completo..."):
-            itens_extraidos = extrair_itens_da_fala(texto_falado)
-            embeddings_cat = calcular_embeddings_catalogo(modelo_ia, opcoes_itens)
+        with st.spinner("⚡ Identificando produtos..."):
+            itens_extraidos = fatiar_texto_multiplos_itens(texto_falado)
             
             adicionados = []
             nao_encontrados = []
             
             for orig, qtd_detectada, termo_busca in itens_extraidos:
-                item_encontrado, score = encontrar_item_super_assertivo(termo_busca, opcoes_itens, embeddings_cat)
+                item_encontrado, score = encontrar_item_mais_parecido(termo_busca, opcoes_itens)
                 
                 if item_encontrado:
                     dados = mapeamento_itens[item_encontrado]
@@ -345,7 +352,7 @@ else:
             codigo_detectado = "-"
             subcategoria_detectada = "OUTROS"
     else:
-        st.warning("Carregando lista de produtos ou a planilha na nuvem está vazia...")
+        st.warning("⚠️ Carregando lista de produtos da nuvem...")
         item_nome_limpo = ""
         unidade_medida = "UND"
         codigo_detectado = "-"
@@ -416,9 +423,9 @@ if not st.session_state.carrinho_df.empty:
                 URL_WEB_APP, 
                 method="POST", 
                 data=json.dumps(st.session_state.carrinho_df.to_dict(orient='records')).encode('utf-8'), 
-                headers={'Content-Type': 'application/json'}
+                headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'}
             )
-            with urllib.request.urlopen(req) as res:
+            with urllib.request.urlopen(req, timeout=15) as res:
                 if "Success" in res.read().decode('utf-8'):
                     st.balloons()
                     st.success("Enviado com sucesso!")
